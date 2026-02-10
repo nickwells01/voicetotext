@@ -20,5 +20,7 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>VoiceToText</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>VoiceToText needs to simulate paste commands to insert transcribed text into your active application.</string>
 </dict>
 </plist>

@@ -22,10 +22,6 @@ final class TranscriptionPipeline: ObservableObject {
 
     @Published var isModelReady: Bool = false
 
-    /// The last non-VoiceToText app the user had focused.
-    /// Used to return focus before pasting transcribed text.
-    private var previousActiveApp: NSRunningApplication?
-
     // MARK: - App Lifecycle
 
     func setup() {
@@ -38,17 +34,6 @@ final class TranscriptionPipeline: ObservableObject {
         }
         hotKeyManager.setup()
         logger.info("TranscriptionPipeline setup complete")
-
-        // Track the last active app so we know where to paste
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
-            self?.previousActiveApp = app
-        }
 
         // Load model in background
         Task {
@@ -168,18 +153,16 @@ final class TranscriptionPipeline: ObservableObject {
         // Step 3: Paste via clipboard
         appState.lastTranscription = finalText
 
-        // Re-activate the user's target app before pasting
-        if let targetApp = previousActiveApp,
-           targetApp.bundleIdentifier != Bundle.main.bundleIdentifier {
-            targetApp.activate()
-            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms for activation
-        }
+        // Hide overlay (non-activating panel, so target app retains focus)
+        RecordingOverlayWindow.shared.hide()
+
+        // Brief settle time for window server
+        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
         await clipboardPaster.paste(text: finalText)
 
         // Done
         appState.transitionTo(.idle)
-        RecordingOverlayWindow.shared.hide()
         logger.info("Pipeline complete, pasted text: \(finalText.prefix(80))")
     }
 }

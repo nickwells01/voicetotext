@@ -11,6 +11,15 @@ final class ClipboardPaster {
     // MARK: - Paste Text
 
     func paste(text: String) async {
+        // Check accessibility first
+        if !AXIsProcessTrusted() {
+            logger.warning("Accessibility permission not granted — auto-paste will not work")
+        }
+        if !CGPreflightPostEventAccess() {
+            logger.warning("CGPreflightPostEventAccess returned false — requesting access")
+            CGRequestPostEventAccess()
+        }
+
         // Put text on clipboard
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -18,19 +27,58 @@ final class ClipboardPaster {
         logger.info("Set transcribed text on pasteboard (\(text.count) chars)")
 
         // Small delay to ensure pasteboard update is visible to other apps
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
 
-        // Try to auto-paste via Cmd+V simulation
+        // Primary: CGEvent posted to session event tap (proven approach from Maccy/Clipy)
+        if simulatePasteViaCGEvent() {
+            logger.info("Auto-paste succeeded via CGEvent")
+            return
+        }
+
+        // Fallback: AppleScript via System Events
         if simulatePasteViaAppleScript() {
             logger.info("Auto-paste succeeded via AppleScript")
-        } else if simulatePasteViaCGEvent() {
-            logger.info("Auto-paste succeeded via CGEvent")
-        } else {
-            logger.warning("Auto-paste failed — text is on clipboard for manual Cmd+V")
+            return
         }
+
+        logger.warning("Auto-paste failed — text is on clipboard for manual Cmd+V")
     }
 
-    // MARK: - Paste via AppleScript (System Events)
+    // MARK: - Paste via CGEvent (primary)
+
+    private func simulatePasteViaCGEvent() -> Bool {
+        guard AXIsProcessTrusted() else {
+            logger.warning("CGEvent paste skipped: accessibility not granted")
+            return false
+        }
+
+        let source = CGEventSource(stateID: .combinedSessionState)
+        source?.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateSuppressionInterval
+        )
+
+        let vKeyCode = UInt16(kVK_ANSI_V)
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
+            logger.error("Failed to create CGEvents for paste")
+            return false
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        // Post to session event tap — proven working approach used by Maccy, Clipy, Espanso.
+        // postToPid is unreliable on modern macOS (silent failures).
+        keyDown.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cgSessionEventTap)
+
+        logger.info("Posted paste events to cgSessionEventTap")
+        return true
+    }
+
+    // MARK: - Paste via AppleScript (fallback)
 
     private func simulatePasteViaAppleScript() -> Bool {
         guard let script = NSAppleScript(source: """
@@ -50,25 +98,6 @@ final class ClipboardPaster {
             logger.warning("AppleScript paste failed: \(message)")
             return false
         }
-
-        return true
-    }
-
-    // MARK: - Paste via CGEvent (fallback)
-
-    private func simulatePasteViaCGEvent() -> Bool {
-        guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: UInt16(kVK_ANSI_V), keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: UInt16(kVK_ANSI_V), keyDown: false) else {
-            logger.error("Failed to create CGEvents for paste")
-            return false
-        }
-
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-
-        keyDown.post(tap: .cgSessionEventTap)
-        usleep(50_000) // 50ms
-        keyUp.post(tap: .cgSessionEventTap)
 
         return true
     }
