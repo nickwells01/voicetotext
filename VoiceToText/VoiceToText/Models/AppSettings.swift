@@ -6,7 +6,7 @@ import KeyboardShortcuts
 enum StorageKey {
     static let selectedModelName = "selectedModelName"
     static let activationMode = "activationMode"
-    static let useFnDoubleTap = "useFnDoubleTap"
+    static let triggerMethod = "triggerMethod"
     static let aiCleanupEnabled = "aiCleanupEnabled"
     static let llmConfigData = "llmConfigData"
     static let launchAtLogin = "launchAtLogin"
@@ -27,6 +27,24 @@ enum ActivationMode: String, CaseIterable, Identifiable {
         switch self {
         case .holdToTalk: return "Hold to Talk"
         case .toggle: return "Toggle (Press to Start/Stop)"
+        }
+    }
+}
+
+// MARK: - Trigger Method
+
+enum TriggerMethod: String, CaseIterable, Identifiable {
+    case fnHold = "fnHold"
+    case fnDoubleTap = "fnDoubleTap"
+    case keyboardShortcut = "keyboardShortcut"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .fnHold: return "Hold Fn"
+        case .fnDoubleTap: return "Double-Tap Fn"
+        case .keyboardShortcut: return "Keyboard Shortcut"
         }
     }
 }

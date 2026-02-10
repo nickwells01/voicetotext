@@ -38,17 +38,31 @@ private struct GeneralTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: appState.activationMode) { _ in
+                    TranscriptionPipeline.shared.reloadHotKeys()
+                }
 
-                Toggle("Use Fn Double-Tap", isOn: $appState.useFnDoubleTap)
+                Picker("Trigger", selection: $appState.triggerMethod) {
+                    ForEach(TriggerMethod.allCases) { method in
+                        Text(method.displayName).tag(method.rawValue)
+                    }
+                }
+                .onChange(of: appState.triggerMethod) { _ in
+                    TranscriptionPipeline.shared.reloadHotKeys()
+                }
 
-                Text("Requires accessibility permission to detect the Fn key.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if appState.currentTriggerMethod == .fnHold || appState.currentTriggerMethod == .fnDoubleTap {
+                    Text("Requires accessibility permission to detect the Fn key.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-                HStack {
-                    Text("Keyboard Shortcut")
-                    Spacer()
-                    KeyboardShortcuts.Recorder(for: .toggleRecording)
+                if appState.currentTriggerMethod == .keyboardShortcut {
+                    HStack {
+                        Text("Keyboard Shortcut")
+                        Spacer()
+                        KeyboardShortcuts.Recorder(for: .toggleRecording)
+                    }
                 }
             }
 

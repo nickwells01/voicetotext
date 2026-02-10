@@ -95,17 +95,79 @@ struct MenuBarView: View {
         }
     }
 
+    @State private var llmConfig = LLMConfig.load()
+
     // MARK: - Config Section
+
+    private var downloadedModels: [WhisperModel] {
+        WhisperModel.availableModels.filter { modelManager.isModelDownloaded($0) }
+    }
 
     private var configSection: some View {
         VStack(spacing: 8) {
-            configRow(label: "Model", value: currentModelName, icon: "cpu")
-            configRow(label: "Activation", value: activationDescription, icon: "keyboard")
-            configRow(label: "AI Cleanup", value: aiCleanupStatus, icon: "sparkles")
+            // Model picker
+            configControl(icon: "cpu", label: "Model") {
+                Picker("", selection: $appState.selectedModelName) {
+                    ForEach(downloadedModels) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .onChange(of: appState.selectedModelName) { _ in
+                    Task { await TranscriptionPipeline.shared.loadSelectedModel() }
+                }
+            }
+
+            // Fast mode toggle (only when selected model has a downloaded fast variant)
+            if let model = appState.selectedModel,
+               model.hasFastVariant,
+               modelManager.isFastModelDownloaded(model) {
+                configControl(icon: "bolt", label: "Fast Mode") {
+                    Toggle("", isOn: $appState.fastMode)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .toggleStyle(.switch)
+                        .onChange(of: appState.fastMode) { _ in
+                            Task { await TranscriptionPipeline.shared.loadSelectedModel() }
+                        }
+                }
+            }
+
+            // Activation mode picker
+            configControl(icon: "keyboard", label: "Activation") {
+                Picker("", selection: $appState.activationMode) {
+                    ForEach(ActivationMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+            }
+
+            // AI Cleanup toggle
+            configControl(icon: "sparkles", label: "AI Cleanup") {
+                HStack(spacing: 4) {
+                    if llmConfig.isEnabled && !llmConfig.isValid {
+                        Text("(not configured)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle("", isOn: $llmConfig.isEnabled)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .toggleStyle(.switch)
+                        .onChange(of: llmConfig.isEnabled) { _ in
+                            llmConfig.save()
+                        }
+                }
+            }
         }
     }
 
-    private func configRow(label: String, value: String, icon: String) -> some View {
+    private func configControl<C: View>(icon: String, label: String, @ViewBuilder control: () -> C) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .frame(width: 16)
@@ -115,45 +177,9 @@ struct MenuBarView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 68, alignment: .leading)
-            Text(value)
-                .font(.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
             Spacer()
+            control()
         }
-    }
-
-    private var currentModelName: String {
-        if let model = appState.selectedModel {
-            let downloaded = modelManager.isModelDownloaded(model)
-            if !downloaded {
-                return "\(model.displayName) (not downloaded)"
-            }
-            let variant = appState.fastMode && modelManager.isFastModelDownloaded(model) ? "(Q5)" : "(Q8)"
-            return "\(model.displayName) \(variant)"
-        }
-        return "None selected"
-    }
-
-    private var activationDescription: String {
-        let mode = appState.currentActivationMode
-        if appState.useFnDoubleTap {
-            return "\(mode == .holdToTalk ? "Hold" : "Toggle") — Fn double-tap"
-        }
-        if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording) {
-            return "\(mode == .holdToTalk ? "Hold" : "Toggle") — \(shortcut.description)"
-        }
-        return mode.displayName
-    }
-
-    private var aiCleanupStatus: String {
-        let config = LLMConfig.load()
-        if config.isEnabled && config.isValid {
-            return "On (\(config.modelName))"
-        } else if config.isEnabled {
-            return "On (not configured)"
-        }
-        return "Off"
     }
 
     // MARK: - Last Transcription

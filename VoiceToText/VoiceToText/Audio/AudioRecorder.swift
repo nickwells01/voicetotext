@@ -154,7 +154,8 @@ final class AudioRecorder {
         audioEngine.stop()
         isRecording = false
 
-        let tailStart = lastChunkEndIndex
+        // Include overlap from the last emitted chunk so words at the boundary aren't lost
+        let tailStart = max(0, lastChunkEndIndex - Self.overlapSamples)
         let tail: [Float]
         if tailStart < accumulatedSamples.count {
             tail = Array(accumulatedSamples[tailStart...])

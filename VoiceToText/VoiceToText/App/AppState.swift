@@ -39,7 +39,7 @@ final class AppState: ObservableObject {
 
     @AppStorage(StorageKey.selectedModelName) var selectedModelName: String = "base.en"
     @AppStorage(StorageKey.activationMode) var activationMode: String = ActivationMode.holdToTalk.rawValue
-    @AppStorage(StorageKey.useFnDoubleTap) var useFnDoubleTap: Bool = true
+    @AppStorage(StorageKey.triggerMethod) var triggerMethod: String = TriggerMethod.fnHold.rawValue
     @AppStorage(StorageKey.hasCompletedOnboarding) var hasCompletedOnboarding: Bool = false
     @AppStorage(StorageKey.fnDoubleTapInterval) var fnDoubleTapInterval: Double = 0.4
     @AppStorage(StorageKey.fastMode) var fastMode: Bool = false
@@ -48,6 +48,10 @@ final class AppState: ObservableObject {
 
     var currentActivationMode: ActivationMode {
         ActivationMode(rawValue: activationMode) ?? .holdToTalk
+    }
+
+    var currentTriggerMethod: TriggerMethod {
+        TriggerMethod(rawValue: triggerMethod) ?? .fnHold
     }
 
     var selectedModel: WhisperModel? {

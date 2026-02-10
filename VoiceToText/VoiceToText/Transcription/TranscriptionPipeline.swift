@@ -50,6 +50,10 @@ final class TranscriptionPipeline: ObservableObject {
         }
     }
 
+    func reloadHotKeys() {
+        hotKeyManager.setup()
+    }
+
     // MARK: - Model Loading
 
     func loadSelectedModel() async {
@@ -136,18 +140,27 @@ final class TranscriptionPipeline: ObservableObject {
 
     // MARK: - Streaming Chunk Processing
 
-    /// Called during recording when a 3-second chunk is ready
+    /// Called during recording when a 3-second chunk is ready.
+    /// Each chunk's Task awaits the previous one so that:
+    ///  1. `lastChunkText` is up-to-date when captured as decoder context
+    ///  2. Only one `transcribeChunk` call is in-flight at a time, preventing
+    ///     the Whisper instance from throwing `instanceBusy` via actor reentrancy
     private func processChunk(_ chunk: [Float]) {
-        let previousText = lastChunkText
+        let previousTask = chunkTranscriptionTask
         chunkTranscriptionTask = Task {
+            // Wait for the previous chunk to finish before starting ours
+            if let previousTask {
+                await previousTask.value
+            }
+            let previousText = self.lastChunkText
             do {
-                let text = try await whisperManager.transcribeChunk(frames: chunk, previousText: previousText)
+                let text = try await self.whisperManager.transcribeChunk(frames: chunk, previousText: previousText)
                 guard !text.isEmpty else { return }
-                chunkTexts.append(text)
-                lastChunkText = text
-                logger.info("Chunk \(self.chunkTexts.count) transcribed: \(text.prefix(60))")
+                self.chunkTexts.append(text)
+                self.lastChunkText = text
+                self.logger.info("Chunk \(self.chunkTexts.count) transcribed: \(text.prefix(60))")
             } catch {
-                logger.error("Chunk transcription failed: \(error.localizedDescription)")
+                self.logger.error("Chunk transcription failed: \(error.localizedDescription)")
             }
         }
     }
@@ -241,17 +254,23 @@ final class TranscriptionPipeline: ObservableObject {
                 continue
             }
 
-            // Check if the first 1-3 words of the current chunk match the last words of the previous result
-            // This handles overlap-caused duplication
+            // Check if the first 1-2 words of the current chunk match the last words of the previous result.
+            // 200ms overlap ≈ 1 word, so maxOverlap=2 is generous. Use case-insensitive matching
+            // (Whisper often capitalizes the first word of each chunk) and skip matches where all
+            // matched words are very short (<=2 chars) to avoid false positives on "I", "a", etc.
             var overlapCount = 0
-            let maxOverlap = min(3, min(prevWords.count, currWords.count))
+            let maxOverlap = min(2, min(prevWords.count, currWords.count))
 
             for checkLen in (1...maxOverlap).reversed() {
                 let prevTail = prevWords.suffix(checkLen).map(String.init)
                 let currHead = currWords.prefix(checkLen).map(String.init)
                 if prevTail.map({ $0.lowercased() }) == currHead.map({ $0.lowercased() }) {
-                    overlapCount = checkLen
-                    break
+                    // Skip if all matched words are very short (likely coincidental)
+                    let allShort = prevTail.allSatisfy { $0.count <= 2 }
+                    if !allShort {
+                        overlapCount = checkLen
+                        break
+                    }
                 }
             }
 
