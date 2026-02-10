@@ -1,0 +1,51 @@
+name: VoiceToText
+options:
+  bundleIdPrefix: com.voicetotext
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+packages:
+  SwiftWhisper:
+    url: https://github.com/exPHAT/SwiftWhisper.git
+    from: "1.2.0"
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts.git
+    from: "2.0.0"
+  LaunchAtLogin-Modern:
+    url: https://github.com/sindresorhus/LaunchAtLogin-Modern.git
+    from: "1.0.0"
+
+targets:
+  VoiceToText:
+    type: application
+    platform: macOS
+    sources:
+      - path: VoiceToText
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/VoiceToText.entitlements"
+    settings:
+      base:
+        INFOPLIST_FILE: VoiceToText/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VoiceToText/Resources/VoiceToText.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.voicetotext.app
+        PRODUCT_NAME: VoiceToText
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_STRICT_CONCURRENCY: targeted
+    dependencies:
+      - package: SwiftWhisper
+      - package: KeyboardShortcuts
+      - package: LaunchAtLogin-Modern
+        product: LaunchAtLogin
+    entitlements:
+      path: VoiceToText/Resources/VoiceToText.entitlements

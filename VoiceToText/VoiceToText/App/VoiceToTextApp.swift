@@ -1,0 +1,62 @@
+import SwiftUI
+import KeyboardShortcuts
+
+@main
+struct VoiceToTextApp: App {
+    @StateObject private var appState = AppState.shared
+    @StateObject private var pipeline = TranscriptionPipeline.shared
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Scene {
+        MenuBarExtra {
+            MenuBarView()
+                .environmentObject(appState)
+                .environmentObject(pipeline)
+        } label: {
+            MenuBarIcon(state: appState.recordingState)
+                .onAppear {
+                    // First-time setup when menu bar icon appears
+                    pipeline.setup()
+                    if !appState.hasCompletedOnboarding {
+                        openWindow(id: "onboarding")
+                    }
+                }
+        }
+        .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+                .environmentObject(appState)
+                .environmentObject(pipeline)
+        }
+
+        Window("Welcome to VoiceToText", id: "onboarding") {
+            OnboardingView()
+                .environmentObject(appState)
+                .frame(width: 500, height: 600)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+    }
+}
+
+// MARK: - Menu Bar Icon
+
+struct MenuBarIcon: View {
+    let state: RecordingState
+
+    var body: some View {
+        switch state {
+        case .idle:
+            Image(systemName: "mic")
+        case .recording:
+            Image(systemName: "mic.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.red)
+        case .transcribing, .processing:
+            Image(systemName: "waveform")
+        case .error:
+            Image(systemName: "mic.slash")
+        }
+    }
+}
