@@ -21,6 +21,31 @@ final class LLMPostProcessor {
             return rawText
         }
 
+        switch config.provider {
+        case .remote:
+            return await processRemote(rawText: rawText)
+        case .local:
+            return await processLocal(rawText: rawText)
+        }
+    }
+
+    // MARK: - Test Connection / Inference
+
+    /// Verifies the LLM is reachable (remote) or can generate output (local).
+    func testConnection() async -> Bool {
+        guard config.isValid else { return false }
+
+        switch config.provider {
+        case .remote:
+            return await testRemote()
+        case .local:
+            return await testLocal()
+        }
+    }
+
+    // MARK: - Remote Processing
+
+    private func processRemote(rawText: String) async -> String {
         do {
             let result = try await sendChatRequest(userMessage: rawText)
             logger.info("LLM processed text (\(rawText.count) -> \(result.count) chars)")
@@ -31,12 +56,7 @@ final class LLMPostProcessor {
         }
     }
 
-    // MARK: - Test Connection
-
-    /// Sends a simple test message to verify the LLM endpoint is reachable and configured correctly.
-    func testConnection() async -> Bool {
-        guard config.isValid else { return false }
-
+    private func testRemote() async -> Bool {
         do {
             let _ = try await sendChatRequest(userMessage: "Hello")
             logger.info("LLM connection test succeeded")
@@ -45,6 +65,19 @@ final class LLMPostProcessor {
             logger.error("LLM connection test failed: \(error.localizedDescription)")
             return false
         }
+    }
+
+    // MARK: - Local Processing
+
+    private func processLocal(rawText: String) async -> String {
+        let manager = await LocalLLMManager.shared
+        await manager.resetSession(systemPrompt: config.systemPrompt)
+        return await manager.process(rawText: rawText)
+    }
+
+    private func testLocal() async -> Bool {
+        let manager = await LocalLLMManager.shared
+        return await manager.testInference()
     }
 
     // MARK: - Network

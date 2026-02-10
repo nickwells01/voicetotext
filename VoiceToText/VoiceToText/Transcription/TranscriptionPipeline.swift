@@ -48,6 +48,17 @@ final class TranscriptionPipeline: ObservableObject {
         Task {
             await loadSelectedModel()
         }
+
+        // Pre-load local LLM if configured
+        Task {
+            let llmConfig = LLMConfig.load()
+            if llmConfig.isEnabled && llmConfig.provider == .local {
+                await LocalLLMManager.shared.prepareModel(
+                    modelId: llmConfig.localModelId,
+                    systemPrompt: llmConfig.systemPrompt
+                )
+            }
+        }
     }
 
     func reloadHotKeys() {

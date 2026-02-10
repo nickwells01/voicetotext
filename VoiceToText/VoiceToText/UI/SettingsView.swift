@@ -20,7 +20,7 @@ struct SettingsView: View {
                     Label("AI Cleanup", systemImage: "sparkles")
                 }
         }
-        .frame(width: 480, height: 400)
+        .frame(width: 480, height: 500)
     }
 }
 
@@ -273,6 +273,7 @@ private struct ModelRow: View {
 private struct AICleanupTab: View {
     @State private var config = LLMConfig.load()
     @State private var testResult: TestResult = .none
+    @StateObject private var localLLM = LocalLLMManager.shared
 
     private enum TestResult {
         case none, testing, success, failure
@@ -283,20 +284,23 @@ private struct AICleanupTab: View {
             Section("LLM Post-Processing") {
                 Toggle("Enable AI Cleanup", isOn: $config.isEnabled)
                     .onChange(of: config.isEnabled) { _ in config.save() }
+
+                Picker("Provider", selection: $config.provider) {
+                    ForEach(LLMProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: config.provider) { _ in
+                    testResult = .none
+                    config.save()
+                }
             }
 
-            Section("API Configuration") {
-                TextField("API URL", text: $config.apiURL)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: config.apiURL) { _ in config.save() }
-
-                SecureField("API Key", text: $config.apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: config.apiKey) { _ in config.save() }
-
-                TextField("Model Name", text: $config.modelName)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: config.modelName) { _ in config.save() }
+            if config.provider == .remote {
+                remoteSection
+            } else {
+                localSection
             }
 
             Section("System Prompt") {
@@ -308,10 +312,10 @@ private struct AICleanupTab: View {
 
             Section {
                 HStack {
-                    Button("Test Connection") {
-                        testConnection()
+                    Button(config.provider == .remote ? "Test Connection" : "Test Inference") {
+                        runTest()
                     }
-                    .disabled(!config.isValid || testResult == .testing)
+                    .disabled(!config.isValid || testResult == .testing || (config.provider == .local && !localLLM.state.isReady))
 
                     Spacer()
 
@@ -322,7 +326,7 @@ private struct AICleanupTab: View {
                         ProgressView()
                             .controlSize(.small)
                     case .success:
-                        Label("Connected", systemImage: "checkmark.circle.fill")
+                        Label(config.provider == .remote ? "Connected" : "Passed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     case .failure:
                         Label("Failed", systemImage: "xmark.circle.fill")
@@ -335,7 +339,132 @@ private struct AICleanupTab: View {
         .padding()
     }
 
-    private func testConnection() {
+    // MARK: - Remote Section
+
+    private var remoteSection: some View {
+        Section("API Configuration") {
+            TextField("API URL", text: $config.apiURL)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: config.apiURL) { _ in config.save() }
+
+            SecureField("API Key", text: $config.apiKey)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: config.apiKey) { _ in config.save() }
+
+            TextField("Model Name", text: $config.modelName)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: config.modelName) { _ in config.save() }
+        }
+    }
+
+    // MARK: - Local Section
+
+    private var localSection: some View {
+        Section("Local Model (MLX)") {
+            if !config.isCustomLocalModel {
+                Picker("Model", selection: $config.localModelId) {
+                    ForEach(LocalLLMModel.curatedModels) { model in
+                        Text("\(model.displayName) (\(model.sizeLabel))").tag(model.id)
+                    }
+                }
+                .onChange(of: config.localModelId) { _ in config.save() }
+            }
+
+            Toggle("Use custom HuggingFace model", isOn: $config.isCustomLocalModel)
+                .onChange(of: config.isCustomLocalModel) { _ in config.save() }
+
+            if config.isCustomLocalModel {
+                TextField("HuggingFace Model ID", text: $config.localModelId)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: config.localModelId) { _ in config.save() }
+                Text("e.g. mlx-community/Qwen2.5-3B-Instruct-4bit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Model status and actions
+            localModelStatusView
+        }
+    }
+
+    @ViewBuilder
+    private var localModelStatusView: some View {
+        switch localLLM.state {
+        case .unloaded:
+            Button("Download & Load") {
+                Task {
+                    await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                }
+            }
+            .disabled(config.localModelId.isEmpty)
+
+        case .downloading(let progress):
+            HStack(spacing: 8) {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                Text("\(Int(progress * 100))%")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading model...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .ready:
+            HStack {
+                Label("Ready", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.caption)
+                if let modelId = localLLM.currentModelId {
+                    Text(modelId.split(separator: "/").last.map(String.init) ?? modelId)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Unload") {
+                    Task { await localLLM.unloadModel() }
+                }
+                .controlSize(.small)
+            }
+
+        case .error(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Error", systemImage: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Button("Retry") {
+                    Task {
+                        await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                    }
+                }
+                .controlSize(.small)
+            }
+
+        case .unloading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Unloading...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Test
+
+    private func runTest() {
         testResult = .testing
         let processor = LLMPostProcessor(config: config)
         Task {

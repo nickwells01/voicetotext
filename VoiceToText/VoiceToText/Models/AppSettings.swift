@@ -162,6 +162,57 @@ struct WhisperModel: Identifiable, Codable, Equatable {
     }
 }
 
+// MARK: - LLM Provider
+
+enum LLMProvider: String, Codable, CaseIterable, Identifiable {
+    case remote = "remote"
+    case local = "local"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .remote: return "Remote API"
+        case .local: return "Local (MLX)"
+        }
+    }
+}
+
+// MARK: - Local LLM Model Definition
+
+struct LocalLLMModel: Identifiable, Equatable {
+    let id: String
+    let displayName: String
+    let sizeLabel: String
+
+    static let curatedModels: [LocalLLMModel] = [
+        LocalLLMModel(
+            id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
+            displayName: "Qwen 2.5 3B (Recommended)",
+            sizeLabel: "~1.8 GB"
+        ),
+        LocalLLMModel(
+            id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
+            displayName: "Llama 3.2 3B",
+            sizeLabel: "~1.8 GB"
+        ),
+        LocalLLMModel(
+            id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+            displayName: "Qwen 2.5 1.5B",
+            sizeLabel: "~1 GB"
+        ),
+        LocalLLMModel(
+            id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
+            displayName: "Llama 3.2 1B (Fastest)",
+            sizeLabel: "~0.7 GB"
+        ),
+    ]
+
+    static func model(forId id: String) -> LocalLLMModel? {
+        curatedModels.first { $0.id == id }
+    }
+}
+
 // MARK: - LLM Configuration
 
 struct LLMConfig: Codable, Equatable {
@@ -170,9 +221,31 @@ struct LLMConfig: Codable, Equatable {
     var modelName: String = "gpt-4o-mini"
     var isEnabled: Bool = false
     var systemPrompt: String = "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation."
+    var provider: LLMProvider = .remote
+    var localModelId: String = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+    var isCustomLocalModel: Bool = false
 
     var isValid: Bool {
-        !apiURL.isEmpty && !apiKey.isEmpty && !modelName.isEmpty
+        switch provider {
+        case .remote:
+            return !apiURL.isEmpty && !apiKey.isEmpty && !modelName.isEmpty
+        case .local:
+            return !localModelId.isEmpty
+        }
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiURL = try container.decodeIfPresent(String.self, forKey: .apiURL) ?? "https://api.openai.com"
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? "gpt-4o-mini"
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation."
+        provider = try container.decodeIfPresent(LLMProvider.self, forKey: .provider) ?? .remote
+        localModelId = try container.decodeIfPresent(String.self, forKey: .localModelId) ?? "mlx-community/Qwen2.5-3B-Instruct-4bit"
+        isCustomLocalModel = try container.decodeIfPresent(Bool.self, forKey: .isCustomLocalModel) ?? false
     }
 
     static func load() -> LLMConfig {

@@ -154,6 +154,10 @@ struct MenuBarView: View {
                         Text("(not configured)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                    } else if llmConfig.isEnabled {
+                        Text(llmConfig.provider == .local ? "MLX" : "API")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                     Toggle("", isOn: $llmConfig.isEnabled)
                         .labelsHidden()
@@ -161,6 +165,14 @@ struct MenuBarView: View {
                         .toggleStyle(.switch)
                         .onChange(of: llmConfig.isEnabled) { _ in
                             llmConfig.save()
+                            if llmConfig.isEnabled && llmConfig.provider == .local {
+                                Task {
+                                    await LocalLLMManager.shared.prepareModel(
+                                        modelId: llmConfig.localModelId,
+                                        systemPrompt: llmConfig.systemPrompt
+                                    )
+                                }
+                            }
                         }
                 }
             }

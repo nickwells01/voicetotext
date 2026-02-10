@@ -12,15 +12,17 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 packages:
-  SwiftWhisper:
-    url: https://github.com/exPHAT/SwiftWhisper.git
-    from: "1.2.0"
+  whisper.spm:
+    path: LocalPackages/whisper.spm
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts.git
     from: "2.0.0"
   LaunchAtLogin-Modern:
     url: https://github.com/sindresorhus/LaunchAtLogin-Modern.git
     from: "1.0.0"
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    from: "2.30.0"
 
 targets:
   VoiceToText:
@@ -43,9 +45,14 @@ targets:
         CODE_SIGN_STYLE: Automatic
         SWIFT_STRICT_CONCURRENCY: targeted
     dependencies:
-      - package: SwiftWhisper
+      - package: whisper.spm
+        product: whisper
       - package: KeyboardShortcuts
       - package: LaunchAtLogin-Modern
         product: LaunchAtLogin
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
     entitlements:
       path: VoiceToText/Resources/VoiceToText.entitlements
