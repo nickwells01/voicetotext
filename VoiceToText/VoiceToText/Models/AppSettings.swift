@@ -52,6 +52,19 @@ struct WhisperModel: Identifiable, Codable, Equatable {
         ByteCountFormatter.string(fromByteCount: q5FileSize, countStyle: .file)
     }
 
+    /// Whether the primary file is a distinct higher-quality variant than the fast file.
+    /// When false, both point to the same file and there is no separate fast option.
+    var hasFastVariant: Bool {
+        fileName != q5FileName
+    }
+
+    /// Label for the primary quantization (e.g. "Q8" or "Q5")
+    var primaryQuantLabel: String {
+        if fileName.contains("q8_0") { return "Q8" }
+        if fileName.contains("q5_0") || fileName.contains("q5_1") { return "Q5" }
+        return "Model"
+    }
+
     /// Expected directory name for the CoreML encoder alongside the .bin model file
     var coreMLEncoderName: String {
         fileName.replacingOccurrences(of: ".bin", with: "-encoder.mlmodelc")
@@ -101,6 +114,28 @@ struct WhisperModel: Identifiable, Codable, Equatable {
             q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-q5_0.bin")!,
             q5FileSize: 539_000_000,
             coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-encoder.mlmodelc.zip")!
+        ),
+        WhisperModel(
+            id: "large-v3-turbo",
+            displayName: "XL Turbo (Best Speed/Accuracy)",
+            fileName: "ggml-large-v3-turbo-q8_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin")!,
+            fileSize: 874_000_000,
+            q5FileName: "ggml-large-v3-turbo-q5_0.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin")!,
+            q5FileSize: 574_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-encoder.mlmodelc.zip")!
+        ),
+        WhisperModel(
+            id: "large-v3",
+            displayName: "XXL (Most Accurate)",
+            fileName: "ggml-large-v3-q5_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin")!,
+            fileSize: 1_080_000_000,
+            q5FileName: "ggml-large-v3-q5_0.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin")!,
+            q5FileSize: 1_080_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-encoder.mlmodelc.zip")!
         ),
     ]
 

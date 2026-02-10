@@ -159,21 +159,24 @@ private struct ModelRow: View {
                             .font(.caption)
                     }
                     if isDownloaded {
-                        badgeView("Q8", color: .green)
+                        badgeView(model.primaryQuantLabel, color: .green)
                     }
-                    if isFastDownloaded {
+                    if isFastDownloaded && model.hasFastVariant {
                         badgeView("Q5", color: .orange)
                     }
                     if isCoreMLDownloaded {
                         badgeView("CoreML", color: .blue)
                     }
                 }
-                Text("\(model.id) — Q8: \(model.fileSizeFormatted), Q5: \(model.q5FileSizeFormatted)")
+                Text(model.hasFastVariant
+                    ? "\(model.id) — \(model.primaryQuantLabel): \(model.fileSizeFormatted), Q5: \(model.q5FileSizeFormatted)"
+                    : "\(model.id) — \(model.primaryQuantLabel): \(model.fileSizeFormatted)"
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if isDownloading {
-                    downloadProgressRow(label: "Q8", value: progress)
+                    downloadProgressRow(label: model.primaryQuantLabel, value: progress)
                 }
 
                 if isFastDownloading {
@@ -196,10 +199,10 @@ private struct ModelRow: View {
                             Button("Use") { onSelect() }
                                 .controlSize(.small)
                         }
-                        Button("Delete Q8", role: .destructive) { onDelete() }
+                        Button("Delete \(model.primaryQuantLabel)", role: .destructive) { onDelete() }
                             .controlSize(.mini)
                     }
-                    if !isFastDownloading {
+                    if model.hasFastVariant && !isFastDownloading {
                         if isFastDownloaded {
                             Button("Delete Q5", role: .destructive) { onFastDelete() }
                                 .controlSize(.mini)
