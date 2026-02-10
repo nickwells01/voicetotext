@@ -104,7 +104,10 @@ actor WhisperManager {
 
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
 
-        let text = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip Whisper's silence hallucination artifacts (sequences of 2+ dots)
+        let text = raw.replacingOccurrences(of: "\\.{2,}", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         logger.info("Transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio (RTF: \(String(format: "%.2f", elapsed / max(audioDuration, 0.001)))x)")
         return text
     }
@@ -121,11 +124,17 @@ actor WhisperManager {
             return ""
         }
 
-        // Set initial_prompt for decoder context continuity between chunks
+        // Set initial_prompt for decoder context continuity between chunks.
+        // The strdup'd string must live until after transcribe() returns,
+        // so defer { free } is at function scope (not inside the if block).
+        var promptCString: UnsafeMutablePointer<CChar>?
         if let previousText, !previousText.isEmpty {
-            let promptCString = strdup(previousText)
+            promptCString = strdup(previousText)
             whisper.params.initial_prompt = UnsafePointer(promptCString)
-            defer { free(promptCString) }
+        }
+        defer {
+            if promptCString != nil { free(promptCString) }
+            whisper.params.initial_prompt = nil
         }
 
         let audioDuration = Double(frames.count) / 16000.0
@@ -139,11 +148,11 @@ actor WhisperManager {
             throw WhisperManagerError.transcriptionFailed(error.localizedDescription)
         }
 
-        // Reset initial_prompt after use
-        whisper.params.initial_prompt = nil
-
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-        let text = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip Whisper's silence hallucination artifacts (sequences of 2+ dots)
+        let text = raw.replacingOccurrences(of: "\\.{2,}", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         logger.info("Chunk transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio")
         return text
     }
