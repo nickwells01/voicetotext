@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.useFnDoubleTap) var useFnDoubleTap: Bool = true
     @AppStorage(StorageKey.hasCompletedOnboarding) var hasCompletedOnboarding: Bool = false
     @AppStorage(StorageKey.fnDoubleTapInterval) var fnDoubleTapInterval: Double = 0.4
+    @AppStorage(StorageKey.fastMode) var fastMode: Bool = false
 
     // MARK: - Computed
 

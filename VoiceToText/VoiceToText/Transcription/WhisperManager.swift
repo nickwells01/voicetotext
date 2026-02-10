@@ -1,5 +1,4 @@
 import Foundation
-import SwiftWhisper
 import os
 
 // MARK: - WhisperManager Errors
@@ -68,6 +67,10 @@ actor WhisperManager {
 
             return Whisper(fromFileURL: url, withParams: params)
         }.value
+
+        guard let loadedWhisper else {
+            throw WhisperManagerError.transcriptionFailed("Failed to initialize whisper context from \(url.lastPathComponent)")
+        }
 
         self.whisper = loadedWhisper
         logger.info("Whisper model loaded successfully")

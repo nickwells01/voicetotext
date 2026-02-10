@@ -12,7 +12,8 @@
 		15A4B8697F24CE0E6F5F4CE8 /* LLMPostProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A99AE2B47FD26238ADC398 /* LLMPostProcessor.swift */; };
 		17BD2B6135145633A4F611E5 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EF79AB81E9AD665BA6DB69 /* AppState.swift */; };
 		27B803202BF6E7623675C0D0 /* TranscriptionPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */; };
-		2E2A96D32CFCC98AB55D7DF9 /* SwiftWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = 1D7F9150B06F53A761B63343 /* SwiftWhisper */; };
+		2E2A96D32CFCC98AB55D7DF9 /* whisper in Frameworks */ = {isa = PBXBuildFile; productRef = 1D7F9150B06F53A761B63343 /* whisper */; };
+		D1E2F3A4B5C6D7E8F9A0B1C2 /* WhisperWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F4A5B6C7D8E9F0A1B2C3D4 /* WhisperWrapper.swift */; };
 		30144549E109B2017A7642BA /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = 3CE5CD167220950B10F96573 /* LaunchAtLogin */; };
 		3F168B8BA4A5E810A58C52C1 /* RecordingOverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF2BC9E20C734CF1E2FF28B /* RecordingOverlayWindow.swift */; };
 		45B9E0505101E98BC298A15B /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 2337F2170B9176733992AD22 /* KeyboardShortcuts */; };
@@ -47,6 +48,7 @@
 		BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipeline.swift; sourceTree = "<group>"; };
 		C4F471C22FA4A9B9913C20D5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		E503E6FF190350B5DCCADF66 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E3F4A5B6C7D8E9F0A1B2C3D4 /* WhisperWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperWrapper.swift; sourceTree = "<group>"; };
 		EAF2BC9E20C734CF1E2FF28B /* RecordingOverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingOverlayWindow.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -55,7 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2E2A96D32CFCC98AB55D7DF9 /* SwiftWhisper in Frameworks */,
+				2E2A96D32CFCC98AB55D7DF9 /* whisper in Frameworks */,
 				45B9E0505101E98BC298A15B /* KeyboardShortcuts in Frameworks */,
 				30144549E109B2017A7642BA /* LaunchAtLogin in Frameworks */,
 			);
@@ -78,6 +80,7 @@
 				068019CBCC6F6BDD8F39DE15 /* ModelManager.swift */,
 				BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */,
 				A4F7EC7F14C4AD91CF2AC66C /* WhisperManager.swift */,
+				E3F4A5B6C7D8E9F0A1B2C3D4 /* WhisperWrapper.swift */,
 			);
 			path = Transcription;
 			sourceTree = "<group>";
@@ -192,7 +195,7 @@
 			);
 			name = VoiceToText;
 			packageProductDependencies = (
-				1D7F9150B06F53A761B63343 /* SwiftWhisper */,
+				1D7F9150B06F53A761B63343 /* whisper */,
 				2337F2170B9176733992AD22 /* KeyboardShortcuts */,
 				3CE5CD167220950B10F96573 /* LaunchAtLogin */,
 			);
@@ -227,7 +230,7 @@
 			packageReferences = (
 				66F31A6E2002311EC944AF5A /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
 				685B9EA065F569B2C6F74945 /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */,
-				17AEF6952FAB34F2215C1933 /* XCRemoteSwiftPackageReference "SwiftWhisper" */,
+				A1B2C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "LocalPackages/whisper.spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -260,6 +263,7 @@
 				27B803202BF6E7623675C0D0 /* TranscriptionPipeline.swift in Sources */,
 				DB26F5D385DE9E15585D2E69 /* VoiceToTextApp.swift in Sources */,
 				9724274485CC382DBF536DE7 /* WhisperManager.swift in Sources */,
+				D1E2F3A4B5C6D7E8F9A0B1C2 /* WhisperWrapper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,15 +456,14 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		17AEF6952FAB34F2215C1933 /* XCRemoteSwiftPackageReference "SwiftWhisper" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/exPHAT/SwiftWhisper.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		A1B2C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "LocalPackages/whisper.spm" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/whisper.spm;
 		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
 		66F31A6E2002311EC944AF5A /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts.git";
@@ -480,10 +483,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		1D7F9150B06F53A761B63343 /* SwiftWhisper */ = {
+		1D7F9150B06F53A761B63343 /* whisper */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 17AEF6952FAB34F2215C1933 /* XCRemoteSwiftPackageReference "SwiftWhisper" */;
-			productName = SwiftWhisper;
+			package = A1B2C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "LocalPackages/whisper.spm" */;
+			productName = whisper;
 		};
 		2337F2170B9176733992AD22 /* KeyboardShortcuts */ = {
 			isa = XCSwiftPackageProductDependency;

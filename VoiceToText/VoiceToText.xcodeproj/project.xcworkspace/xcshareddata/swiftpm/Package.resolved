@@ -1,5 +1,5 @@
 {
-  "originHash" : "4fe571629741baedb81d5e78831ad531a62a640ab763a8a3bdc6cd3a9dd71bf3",
+  "originHash" : "eeea830c02698f710b1e92495d7c872dd80a9b043c05a6955ef0420f7d1e4823",
   "pins" : [
     {
       "identity" : "keyboardshortcuts",
@@ -17,15 +17,6 @@
       "state" : {
         "revision" : "a04ec1c363be3627734f6dad757d82f5d4fa8fcc",
         "version" : "1.1.0"
-      }
-    },
-    {
-      "identity" : "swiftwhisper",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/exPHAT/SwiftWhisper.git",
-      "state" : {
-        "revision" : "a192004db08de7c6eaa169eede77f1625e7d23fb",
-        "version" : "1.2.0"
       }
     }
   ],

@@ -64,7 +64,7 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        let modelURL = modelManager.modelFileURL(for: model)
+        let modelURL = modelManager.activeModelFileURL(for: model, fastMode: appState.fastMode)
         do {
             try await whisperManager.loadModel(url: modelURL)
             isModelReady = true

@@ -12,6 +12,7 @@ enum StorageKey {
     static let launchAtLogin = "launchAtLogin"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
     static let fnDoubleTapInterval = "fnDoubleTapInterval"
+    static let fastMode = "fastMode"
 }
 
 // MARK: - Activation Mode
@@ -35,13 +36,20 @@ enum ActivationMode: String, CaseIterable, Identifiable {
 struct WhisperModel: Identifiable, Codable, Equatable {
     let id: String
     let displayName: String
-    let fileName: String
-    let downloadURL: URL
-    let fileSize: Int64 // bytes
-    let coreMLModelURL: URL? // URL to CoreML encoder zip (contains -encoder.mlmodelc)
+    let fileName: String       // q8_0 variant (primary)
+    let downloadURL: URL       // q8_0 variant (primary)
+    let fileSize: Int64        // q8_0 size in bytes
+    let q5FileName: String     // q5 variant (fast mode)
+    let q5DownloadURL: URL     // q5 variant (fast mode)
+    let q5FileSize: Int64      // q5 size in bytes
+    let coreMLModelURL: URL?   // URL to CoreML encoder zip (contains -encoder.mlmodelc)
 
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+
+    var q5FileSizeFormatted: String {
+        ByteCountFormatter.string(fromByteCount: q5FileSize, countStyle: .file)
     }
 
     /// Expected directory name for the CoreML encoder alongside the .bin model file
@@ -53,33 +61,45 @@ struct WhisperModel: Identifiable, Codable, Equatable {
         WhisperModel(
             id: "tiny.en",
             displayName: "Tiny (Fastest)",
-            fileName: "ggml-tiny.en.bin",
-            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin")!,
-            fileSize: 77_000_000,
+            fileName: "ggml-tiny.en-q8_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q8_0.bin")!,
+            fileSize: 43_600_000,
+            q5FileName: "ggml-tiny.en-q5_1.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin")!,
+            q5FileSize: 32_200_000,
             coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-encoder.mlmodelc.zip")!
         ),
         WhisperModel(
             id: "base.en",
             displayName: "Small (Fast)",
-            fileName: "ggml-base.en.bin",
-            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin")!,
-            fileSize: 148_000_000,
+            fileName: "ggml-base.en-q8_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q8_0.bin")!,
+            fileSize: 81_800_000,
+            q5FileName: "ggml-base.en-q5_1.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin")!,
+            q5FileSize: 59_700_000,
             coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-encoder.mlmodelc.zip")!
         ),
         WhisperModel(
             id: "small.en",
             displayName: "Medium (Balanced)",
-            fileName: "ggml-small.en.bin",
-            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin")!,
-            fileSize: 488_000_000,
+            fileName: "ggml-small.en-q8_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q8_0.bin")!,
+            fileSize: 264_000_000,
+            q5FileName: "ggml-small.en-q5_1.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin")!,
+            q5FileSize: 190_000_000,
             coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-encoder.mlmodelc.zip")!
         ),
         WhisperModel(
             id: "medium.en",
             displayName: "Large (Best Quality)",
-            fileName: "ggml-medium.en.bin",
-            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin")!,
-            fileSize: 1_533_000_000,
+            fileName: "ggml-medium.en-q8_0.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-q8_0.bin")!,
+            fileSize: 823_000_000,
+            q5FileName: "ggml-medium.en-q5_0.bin",
+            q5DownloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-q5_0.bin")!,
+            q5FileSize: 539_000_000,
             coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-encoder.mlmodelc.zip")!
         ),
     ]

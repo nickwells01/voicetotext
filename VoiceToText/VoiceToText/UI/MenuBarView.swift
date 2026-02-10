@@ -126,7 +126,11 @@ struct MenuBarView: View {
     private var currentModelName: String {
         if let model = appState.selectedModel {
             let downloaded = modelManager.isModelDownloaded(model)
-            return "\(model.displayName)\(downloaded ? "" : " (not downloaded)")"
+            if !downloaded {
+                return "\(model.displayName) (not downloaded)"
+            }
+            let variant = appState.fastMode && modelManager.isFastModelDownloaded(model) ? "(Q5)" : "(Q8)"
+            return "\(model.displayName) \(variant)"
         }
         return "None selected"
     }

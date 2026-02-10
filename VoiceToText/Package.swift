@@ -5,7 +5,7 @@ let package = Package(
     name: "VoiceToText",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/exPHAT/SwiftWhisper.git", from: "1.2.0"),
+        .package(name: "whisper.spm", path: "LocalPackages/whisper.spm"),
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts.git", from: "2.0.0"),
         .package(url: "https://github.com/sindresorhus/LaunchAtLogin-Modern.git", from: "1.0.0"),
     ],
@@ -13,7 +13,7 @@ let package = Package(
         .executableTarget(
             name: "VoiceToText",
             dependencies: [
-                "SwiftWhisper",
+                .product(name: "whisper", package: "whisper.spm"),
                 "KeyboardShortcuts",
                 .product(name: "LaunchAtLogin", package: "LaunchAtLogin-Modern"),
             ],

@@ -94,6 +94,8 @@ final class ModelManager: ObservableObject {
     @Published var isDownloading: [String: Bool] = [:]
     @Published var coreMLDownloadProgress: [String: Double] = [:]
     @Published var isCoreMLDownloading: [String: Bool] = [:]
+    @Published var fastDownloadProgress: [String: Double] = [:]
+    @Published var isFastDownloading: [String: Bool] = [:]
 
     private let fileManager = FileManager.default
 
@@ -130,6 +132,21 @@ final class ModelManager: ObservableObject {
 
     func isModelDownloaded(_ model: WhisperModel) -> Bool {
         fileManager.fileExists(atPath: modelFileURL(for: model).path)
+    }
+
+    func fastModelFileURL(for model: WhisperModel) -> URL {
+        modelsDirectory.appendingPathComponent(model.q5FileName)
+    }
+
+    func isFastModelDownloaded(_ model: WhisperModel) -> Bool {
+        fileManager.fileExists(atPath: fastModelFileURL(for: model).path)
+    }
+
+    func activeModelFileURL(for model: WhisperModel, fastMode: Bool) -> URL {
+        if fastMode && isFastModelDownloaded(model) {
+            return fastModelFileURL(for: model)
+        }
+        return modelFileURL(for: model)
     }
 
     // MARK: - Download
@@ -169,6 +186,53 @@ final class ModelManager: ObservableObject {
 
         downloadProgress[model.id] = 1.0
         logger.info("Model \(model.id) downloaded successfully")
+    }
+
+    // MARK: - Fast Model (Q5) Download
+
+    func downloadFastModel(_ model: WhisperModel) async throws {
+        let fastKey = "\(model.id)-fast"
+        guard isFastDownloading[fastKey] != true else {
+            logger.warning("Fast model download already in progress for \(model.id)")
+            return
+        }
+
+        logger.info("Starting fast model download for \(model.id) from \(model.q5DownloadURL)")
+        isFastDownloading[fastKey] = true
+        fastDownloadProgress[fastKey] = 0
+
+        defer {
+            isFastDownloading[fastKey] = false
+        }
+
+        let tempFileURL: URL = try await withCheckedThrowingContinuation { continuation in
+            let delegate = DownloadDelegate(
+                modelId: fastKey,
+                continuation: continuation,
+                progressKeyPath: \.fastDownloadProgress
+            )
+            let session = URLSession(
+                configuration: .default,
+                delegate: delegate,
+                delegateQueue: nil
+            )
+            let task = session.downloadTask(with: model.q5DownloadURL)
+            task.resume()
+        }
+
+        let destinationURL = fastModelFileURL(for: model)
+        try? fileManager.removeItem(at: destinationURL)
+        try fileManager.moveItem(at: tempFileURL, to: destinationURL)
+
+        fastDownloadProgress[fastKey] = 1.0
+        logger.info("Fast model \(model.id) downloaded successfully")
+    }
+
+    func deleteFastModel(_ model: WhisperModel) throws {
+        let url = fastModelFileURL(for: model)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+        logger.info("Deleted fast model for \(model.id)")
     }
 
     // MARK: - CoreML Model

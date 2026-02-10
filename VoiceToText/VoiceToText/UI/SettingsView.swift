@@ -68,36 +68,62 @@ private struct ModelTab: View {
     @StateObject private var modelManager = ModelManager.shared
 
     var body: some View {
-        List {
-            ForEach(WhisperModel.availableModels) { model in
-                let coreMLKey = "\(model.id)-coreml"
-                ModelRow(
-                    model: model,
-                    isSelected: appState.selectedModelName == model.id,
-                    isDownloaded: modelManager.isModelDownloaded(model),
-                    isDownloading: modelManager.isDownloading[model.id] ?? false,
-                    progress: modelManager.downloadProgress[model.id] ?? 0,
-                    isCoreMLDownloaded: modelManager.isCoreMLDownloaded(model),
-                    isCoreMLDownloading: modelManager.isCoreMLDownloading[coreMLKey] ?? false,
-                    coreMLProgress: modelManager.coreMLDownloadProgress[coreMLKey] ?? 0
-                ) {
-                    appState.selectedModelName = model.id
-                } onDownload: {
+        VStack(spacing: 0) {
+            Toggle("Fast Mode (Q5 — smaller & faster, slightly lower quality)", isOn: $appState.fastMode)
+                .onChange(of: appState.fastMode) { _ in
                     Task {
-                        try? await modelManager.downloadModel(model)
+                        await TranscriptionPipeline.shared.loadSelectedModel()
                     }
-                } onDelete: {
-                    try? modelManager.deleteModel(model)
-                } onCoreMLDownload: {
-                    Task {
-                        try? await modelManager.downloadCoreMLModel(for: model)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
+            Divider()
+
+            List {
+                ForEach(WhisperModel.availableModels) { model in
+                    let coreMLKey = "\(model.id)-coreml"
+                    let fastKey = "\(model.id)-fast"
+                    ModelRow(
+                        model: model,
+                        isSelected: appState.selectedModelName == model.id,
+                        isDownloaded: modelManager.isModelDownloaded(model),
+                        isDownloading: modelManager.isDownloading[model.id] ?? false,
+                        progress: modelManager.downloadProgress[model.id] ?? 0,
+                        isFastDownloaded: modelManager.isFastModelDownloaded(model),
+                        isFastDownloading: modelManager.isFastDownloading[fastKey] ?? false,
+                        fastProgress: modelManager.fastDownloadProgress[fastKey] ?? 0,
+                        isCoreMLDownloaded: modelManager.isCoreMLDownloaded(model),
+                        isCoreMLDownloading: modelManager.isCoreMLDownloading[coreMLKey] ?? false,
+                        coreMLProgress: modelManager.coreMLDownloadProgress[coreMLKey] ?? 0
+                    ) {
+                        appState.selectedModelName = model.id
+                        Task {
+                            await TranscriptionPipeline.shared.loadSelectedModel()
+                        }
+                    } onDownload: {
+                        Task {
+                            try? await modelManager.downloadModel(model)
+                        }
+                    } onDelete: {
+                        try? modelManager.deleteModel(model)
+                    } onFastDownload: {
+                        Task {
+                            try? await modelManager.downloadFastModel(model)
+                        }
+                    } onFastDelete: {
+                        try? modelManager.deleteFastModel(model)
+                    } onCoreMLDownload: {
+                        Task {
+                            try? await modelManager.downloadCoreMLModel(for: model)
+                        }
+                    } onCoreMLDelete: {
+                        try? modelManager.deleteCoreMLModel(model)
                     }
-                } onCoreMLDelete: {
-                    try? modelManager.deleteCoreMLModel(model)
                 }
             }
+            .listStyle(.inset)
         }
-        .listStyle(.inset)
     }
 }
 
@@ -107,12 +133,17 @@ private struct ModelRow: View {
     let isDownloaded: Bool
     let isDownloading: Bool
     let progress: Double
+    let isFastDownloaded: Bool
+    let isFastDownloading: Bool
+    let fastProgress: Double
     let isCoreMLDownloaded: Bool
     let isCoreMLDownloading: Bool
     let coreMLProgress: Double
     let onSelect: () -> Void
     let onDownload: () -> Void
     let onDelete: () -> Void
+    let onFastDownload: () -> Void
+    let onFastDelete: () -> Void
     let onCoreMLDownload: () -> Void
     let onCoreMLDelete: () -> Void
 
@@ -127,47 +158,37 @@ private struct ModelRow: View {
                             .foregroundStyle(.green)
                             .font(.caption)
                     }
+                    if isDownloaded {
+                        badgeView("Q8", color: .green)
+                    }
+                    if isFastDownloaded {
+                        badgeView("Q5", color: .orange)
+                    }
                     if isCoreMLDownloaded {
-                        Text("CoreML")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.blue.opacity(0.15))
-                            .foregroundStyle(.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                        badgeView("CoreML", color: .blue)
                     }
                 }
-                Text("\(model.id) - \(model.fileSizeFormatted)")
+                Text("\(model.id) — Q8: \(model.fileSizeFormatted), Q5: \(model.q5FileSizeFormatted)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if isDownloading {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.linear)
+                    downloadProgressRow(label: "Q8", value: progress)
+                }
+
+                if isFastDownloading {
+                    downloadProgressRow(label: "Q5", value: fastProgress)
                 }
 
                 if isCoreMLDownloading {
-                    HStack(spacing: 4) {
-                        Text("CoreML:")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        ProgressView(value: coreMLProgress)
-                            .progressViewStyle(.linear)
-                        Text("\(Int(coreMLProgress * 100))%")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
+                    downloadProgressRow(label: "CoreML", value: coreMLProgress)
                 }
             }
 
             Spacer()
 
-            if isDownloading {
-                Text("\(Int(progress * 100))%")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+            if isDownloading || isFastDownloading {
+                EmptyView()
             } else if isDownloaded {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 8) {
@@ -175,8 +196,17 @@ private struct ModelRow: View {
                             Button("Use") { onSelect() }
                                 .controlSize(.small)
                         }
-                        Button("Delete", role: .destructive) { onDelete() }
-                            .controlSize(.small)
+                        Button("Delete Q8", role: .destructive) { onDelete() }
+                            .controlSize(.mini)
+                    }
+                    if !isFastDownloading {
+                        if isFastDownloaded {
+                            Button("Delete Q5", role: .destructive) { onFastDelete() }
+                                .controlSize(.mini)
+                        } else {
+                            Button("Get Q5 (Fast)") { onFastDownload() }
+                                .controlSize(.mini)
+                        }
                     }
                     if model.coreMLModelURL != nil && !isCoreMLDownloading {
                         if isCoreMLDownloaded {
@@ -194,6 +224,30 @@ private struct ModelRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func badgeView(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.15))
+            .foregroundStyle(color)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+    }
+
+    private func downloadProgressRow(label: String, value: Double) -> some View {
+        HStack(spacing: 4) {
+            Text("\(label):")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ProgressView(value: value)
+                .progressViewStyle(.linear)
+            Text("\(Int(value * 100))%")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
     }
 }
 
