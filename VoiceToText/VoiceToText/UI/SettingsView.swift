@@ -283,7 +283,10 @@ private struct AICleanupTab: View {
         Form {
             Section("LLM Post-Processing") {
                 Toggle("Enable AI Cleanup", isOn: $config.isEnabled)
-                    .onChange(of: config.isEnabled) { _ in config.save() }
+                    .onChange(of: config.isEnabled) { _ in
+                        config.save()
+                        if config.isEnabled { loadLocalModelIfNeeded() }
+                    }
 
                 Picker("Provider", selection: $config.provider) {
                     ForEach(LLMProvider.allCases) { provider in
@@ -294,6 +297,11 @@ private struct AICleanupTab: View {
                 .onChange(of: config.provider) { _ in
                     testResult = .none
                     config.save()
+                    if config.isEnabled && config.provider == .local {
+                        Task {
+                            await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                        }
+                    }
                 }
             }
 
@@ -367,7 +375,10 @@ private struct AICleanupTab: View {
                         Text("\(model.displayName) (\(model.sizeLabel))").tag(model.id)
                     }
                 }
-                .onChange(of: config.localModelId) { _ in config.save() }
+                .onChange(of: config.localModelId) { _ in
+                    config.save()
+                    loadLocalModelIfNeeded()
+                }
             }
 
             Toggle("Use custom HuggingFace model", isOn: $config.isCustomLocalModel)
@@ -376,8 +387,9 @@ private struct AICleanupTab: View {
             if config.isCustomLocalModel {
                 TextField("HuggingFace Model ID", text: $config.localModelId)
                     .textFieldStyle(.roundedBorder)
+                    .onSubmit { config.save(); loadLocalModelIfNeeded() }
                     .onChange(of: config.localModelId) { _ in config.save() }
-                Text("e.g. mlx-community/Qwen2.5-3B-Instruct-4bit")
+                Text("e.g. mlx-community/Qwen2.5-3B-Instruct-4bit — press Return to load")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -458,6 +470,18 @@ private struct AICleanupTab: View {
                 Text("Unloading...")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Load Local Model
+
+    private func loadLocalModelIfNeeded() {
+        guard config.isEnabled, config.provider == .local, !config.localModelId.isEmpty else { return }
+        // If the selected model differs from the loaded one, load it
+        if localLLM.currentModelId != config.localModelId || !localLLM.state.isReady {
+            Task {
+                await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
             }
         }
     }

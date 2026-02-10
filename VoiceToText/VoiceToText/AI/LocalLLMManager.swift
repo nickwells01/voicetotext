@@ -36,7 +36,9 @@ final class LocalLLMManager: ObservableObject {
     private var systemPrompt: String = ""
 
     private init() {
-        MLX.GPU.set(cacheLimit: 20 * 1024 * 1024)
+        // Let MLX manage GPU cache with generous limit.
+        // Too-small values (e.g. 20MB) force constant re-allocation and destroy performance.
+        MLX.GPU.set(cacheLimit: 1024 * 1024 * 1024)
     }
 
     // MARK: - Model Lifecycle
@@ -74,7 +76,8 @@ final class LocalLLMManager: ObservableObject {
 
             state = .loading
             self.modelContainer = container
-            self.session = ChatSession(container, instructions: systemPrompt)
+            let params = GenerateParameters(maxTokens: 2048, temperature: 0.1)
+            self.session = ChatSession(container, instructions: systemPrompt, generateParameters: params)
 
             state = .ready
             logger.info("Local LLM ready: \(modelId)")
@@ -91,6 +94,10 @@ final class LocalLLMManager: ObservableObject {
             logger.warning("Local LLM not ready, returning raw text")
             return rawText
         }
+
+        // Cap generation at ~2x input token estimate (1 token ≈ 4 chars) + headroom
+        let estimatedInputTokens = max(rawText.count / 4, 20)
+        session.generateParameters.maxTokens = estimatedInputTokens * 2
 
         do {
             let result = try await session.respond(to: rawText)
@@ -110,9 +117,10 @@ final class LocalLLMManager: ObservableObject {
     // MARK: - Session Management
 
     func resetSession(systemPrompt: String) {
-        guard let modelContainer else { return }
+        guard let session else { return }
         self.systemPrompt = systemPrompt
-        self.session = ChatSession(modelContainer, instructions: systemPrompt)
+        session.instructions = systemPrompt
+        Task { await session.clear() }
     }
 
     // MARK: - Unload
