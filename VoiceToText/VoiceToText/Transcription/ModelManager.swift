@@ -23,10 +23,16 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     private let modelId: String
     private let continuation: CheckedContinuation<URL, Error>
     private var lastProgressUpdate = Date.distantPast
+    private let progressKeyPath: ReferenceWritableKeyPath<ModelManager, [String: Double]>
 
-    init(modelId: String, continuation: CheckedContinuation<URL, Error>) {
+    init(
+        modelId: String,
+        continuation: CheckedContinuation<URL, Error>,
+        progressKeyPath: ReferenceWritableKeyPath<ModelManager, [String: Double]> = \.downloadProgress
+    ) {
         self.modelId = modelId
         self.continuation = continuation
+        self.progressKeyPath = progressKeyPath
     }
 
     func urlSession(
@@ -59,8 +65,9 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         lastProgressUpdate = now
         let progress = min(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), 1.0)
         let modelId = self.modelId
+        let keyPath = self.progressKeyPath
         Task { @MainActor in
-            ModelManager.shared.downloadProgress[modelId] = progress
+            ModelManager.shared[keyPath: keyPath][modelId] = progress
         }
     }
 
@@ -85,6 +92,8 @@ final class ModelManager: ObservableObject {
 
     @Published var downloadProgress: [String: Double] = [:]
     @Published var isDownloading: [String: Bool] = [:]
+    @Published var coreMLDownloadProgress: [String: Double] = [:]
+    @Published var isCoreMLDownloading: [String: Bool] = [:]
 
     private let fileManager = FileManager.default
 
@@ -160,6 +169,93 @@ final class ModelManager: ObservableObject {
 
         downloadProgress[model.id] = 1.0
         logger.info("Model \(model.id) downloaded successfully")
+    }
+
+    // MARK: - CoreML Model
+
+    func coreMLEncoderURL(for model: WhisperModel) -> URL {
+        modelsDirectory.appendingPathComponent(model.coreMLEncoderName, isDirectory: true)
+    }
+
+    func isCoreMLDownloaded(_ model: WhisperModel) -> Bool {
+        fileManager.fileExists(atPath: coreMLEncoderURL(for: model).path)
+    }
+
+    func downloadCoreMLModel(for model: WhisperModel) async throws {
+        guard let coreMLURL = model.coreMLModelURL else {
+            logger.warning("No CoreML URL for model \(model.id)")
+            return
+        }
+
+        let coreMLKey = "\(model.id)-coreml"
+        guard isCoreMLDownloading[coreMLKey] != true else {
+            logger.warning("CoreML download already in progress for \(model.id)")
+            return
+        }
+
+        logger.info("Starting CoreML download for \(model.id)")
+        isCoreMLDownloading[coreMLKey] = true
+        coreMLDownloadProgress[coreMLKey] = 0
+
+        defer {
+            isCoreMLDownloading[coreMLKey] = false
+        }
+
+        // Download the zip file
+        let tempZipURL: URL = try await withCheckedThrowingContinuation { continuation in
+            let delegate = DownloadDelegate(
+                modelId: coreMLKey,
+                continuation: continuation,
+                progressKeyPath: \.coreMLDownloadProgress
+            )
+            let session = URLSession(
+                configuration: .default,
+                delegate: delegate,
+                delegateQueue: nil
+            )
+            let task = session.downloadTask(with: coreMLURL)
+            task.resume()
+        }
+
+        // Extract zip to models directory
+        let destinationURL = coreMLEncoderURL(for: model)
+        try? fileManager.removeItem(at: destinationURL)
+
+        // Use /usr/bin/ditto to extract (handles macOS zip format correctly)
+        let tempExtractDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempExtractDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempExtractDir) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-xk", tempZipURL.path, tempExtractDir.path]
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw ModelManagerError.downloadFailed("Failed to extract CoreML model zip")
+        }
+
+        // Find the .mlmodelc directory inside the extracted content
+        let extractedContents = try fileManager.contentsOfDirectory(at: tempExtractDir, includingPropertiesForKeys: nil)
+        if let mlmodelcDir = extractedContents.first(where: { $0.lastPathComponent.hasSuffix(".mlmodelc") }) {
+            try fileManager.moveItem(at: mlmodelcDir, to: destinationURL)
+        } else {
+            // The zip might extract directly as the directory name we need
+            // Try moving the whole extracted directory
+            throw ModelManagerError.downloadFailed("Could not find .mlmodelc directory in extracted zip")
+        }
+
+        try? fileManager.removeItem(at: tempZipURL)
+        coreMLDownloadProgress[coreMLKey] = 1.0
+        logger.info("CoreML model for \(model.id) downloaded and extracted successfully")
+    }
+
+    func deleteCoreMLModel(_ model: WhisperModel) throws {
+        let url = coreMLEncoderURL(for: model)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
+        logger.info("Deleted CoreML model for \(model.id)")
     }
 
     // MARK: - Delete

@@ -38,32 +38,49 @@ struct WhisperModel: Identifiable, Codable, Equatable {
     let fileName: String
     let downloadURL: URL
     let fileSize: Int64 // bytes
+    let coreMLModelURL: URL? // URL to CoreML encoder zip (contains -encoder.mlmodelc)
 
     var fileSizeFormatted: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
     }
 
+    /// Expected directory name for the CoreML encoder alongside the .bin model file
+    var coreMLEncoderName: String {
+        fileName.replacingOccurrences(of: ".bin", with: "-encoder.mlmodelc")
+    }
+
     static let availableModels: [WhisperModel] = [
+        WhisperModel(
+            id: "tiny.en",
+            displayName: "Tiny (Fastest)",
+            fileName: "ggml-tiny.en.bin",
+            downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin")!,
+            fileSize: 77_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-encoder.mlmodelc.zip")!
+        ),
         WhisperModel(
             id: "base.en",
             displayName: "Small (Fast)",
             fileName: "ggml-base.en.bin",
             downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin")!,
-            fileSize: 148_000_000
+            fileSize: 148_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-encoder.mlmodelc.zip")!
         ),
         WhisperModel(
             id: "small.en",
             displayName: "Medium (Balanced)",
             fileName: "ggml-small.en.bin",
             downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin")!,
-            fileSize: 488_000_000
+            fileSize: 488_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-encoder.mlmodelc.zip")!
         ),
         WhisperModel(
             id: "medium.en",
             displayName: "Large (Best Quality)",
             fileName: "ggml-medium.en.bin",
             downloadURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin")!,
-            fileSize: 1_533_000_000
+            fileSize: 1_533_000_000,
+            coreMLModelURL: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en-encoder.mlmodelc.zip")!
         ),
     ]
 

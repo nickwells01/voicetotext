@@ -70,12 +70,16 @@ private struct ModelTab: View {
     var body: some View {
         List {
             ForEach(WhisperModel.availableModels) { model in
+                let coreMLKey = "\(model.id)-coreml"
                 ModelRow(
                     model: model,
                     isSelected: appState.selectedModelName == model.id,
                     isDownloaded: modelManager.isModelDownloaded(model),
                     isDownloading: modelManager.isDownloading[model.id] ?? false,
-                    progress: modelManager.downloadProgress[model.id] ?? 0
+                    progress: modelManager.downloadProgress[model.id] ?? 0,
+                    isCoreMLDownloaded: modelManager.isCoreMLDownloaded(model),
+                    isCoreMLDownloading: modelManager.isCoreMLDownloading[coreMLKey] ?? false,
+                    coreMLProgress: modelManager.coreMLDownloadProgress[coreMLKey] ?? 0
                 ) {
                     appState.selectedModelName = model.id
                 } onDownload: {
@@ -84,6 +88,12 @@ private struct ModelTab: View {
                     }
                 } onDelete: {
                     try? modelManager.deleteModel(model)
+                } onCoreMLDownload: {
+                    Task {
+                        try? await modelManager.downloadCoreMLModel(for: model)
+                    }
+                } onCoreMLDelete: {
+                    try? modelManager.deleteCoreMLModel(model)
                 }
             }
         }
@@ -97,9 +107,14 @@ private struct ModelRow: View {
     let isDownloaded: Bool
     let isDownloading: Bool
     let progress: Double
+    let isCoreMLDownloaded: Bool
+    let isCoreMLDownloading: Bool
+    let coreMLProgress: Double
     let onSelect: () -> Void
     let onDownload: () -> Void
     let onDelete: () -> Void
+    let onCoreMLDownload: () -> Void
+    let onCoreMLDelete: () -> Void
 
     var body: some View {
         HStack {
@@ -112,6 +127,15 @@ private struct ModelRow: View {
                             .foregroundStyle(.green)
                             .font(.caption)
                     }
+                    if isCoreMLDownloaded {
+                        Text("CoreML")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
                 }
                 Text("\(model.id) - \(model.fileSizeFormatted)")
                     .font(.caption)
@@ -120,6 +144,20 @@ private struct ModelRow: View {
                 if isDownloading {
                     ProgressView(value: progress)
                         .progressViewStyle(.linear)
+                }
+
+                if isCoreMLDownloading {
+                    HStack(spacing: 4) {
+                        Text("CoreML:")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        ProgressView(value: coreMLProgress)
+                            .progressViewStyle(.linear)
+                        Text("\(Int(coreMLProgress * 100))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
             }
 
@@ -131,13 +169,24 @@ private struct ModelRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             } else if isDownloaded {
-                HStack(spacing: 8) {
-                    if !isSelected {
-                        Button("Use") { onSelect() }
+                VStack(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 8) {
+                        if !isSelected {
+                            Button("Use") { onSelect() }
+                                .controlSize(.small)
+                        }
+                        Button("Delete", role: .destructive) { onDelete() }
                             .controlSize(.small)
                     }
-                    Button("Delete", role: .destructive) { onDelete() }
-                        .controlSize(.small)
+                    if model.coreMLModelURL != nil && !isCoreMLDownloading {
+                        if isCoreMLDownloaded {
+                            Button("Remove CoreML", role: .destructive) { onCoreMLDelete() }
+                                .controlSize(.mini)
+                        } else {
+                            Button("Get CoreML Accelerator") { onCoreMLDownload() }
+                                .controlSize(.mini)
+                        }
+                    }
                 }
             } else {
                 Button("Download") { onDownload() }

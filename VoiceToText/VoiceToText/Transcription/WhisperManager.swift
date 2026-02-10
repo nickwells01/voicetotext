@@ -44,6 +44,28 @@ actor WhisperManager {
         let loadedWhisper = await Task.detached(priority: .userInitiated) {
             let params = WhisperParams(strategy: .greedy)
             params.language = .english
+
+            // Use all available cores for maximum speed
+            params.n_threads = Int32(ProcessInfo.processInfo.activeProcessorCount)
+
+            // Skip segment boundary detection — we want one result fast
+            params.single_segment = true
+
+            // Disable temperature fallback retries (default retries up to 3x on low confidence)
+            params.temperature_inc = 0.0
+
+            // Skip candidate comparison (default best_of=2)
+            params.greedy.best_of = 1
+
+            // Suppress blank/silence hallucinations
+            params.suppress_blank = true
+
+            // Disable all console printing for speed
+            params.print_progress = false
+            params.print_timestamps = false
+            params.print_realtime = false
+            params.print_special = false
+
             return Whisper(fromFileURL: url, withParams: params)
         }.value
 
@@ -64,7 +86,10 @@ actor WhisperManager {
             throw WhisperManagerError.emptyAudio
         }
 
-        logger.info("Starting transcription of \(frames.count) audio frames")
+        let audioDuration = Double(frames.count) / 16000.0
+        logger.info("Starting transcription of \(frames.count) frames (\(String(format: "%.2f", audioDuration))s audio)")
+
+        let startTime = CFAbsoluteTimeGetCurrent()
 
         let segments: [Segment]
         do {
@@ -74,8 +99,49 @@ actor WhisperManager {
             throw WhisperManagerError.transcriptionFailed(error.localizedDescription)
         }
 
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+
         let text = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        logger.info("Transcription complete: \(text.prefix(80))...")
+        logger.info("Transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio (RTF: \(String(format: "%.2f", elapsed / max(audioDuration, 0.001)))x)")
+        return text
+    }
+
+    // MARK: - Chunk Transcription (Streaming)
+
+    /// Transcribe a single chunk of audio, optionally using previous text as decoder context.
+    func transcribeChunk(frames: [Float], previousText: String? = nil) async throws -> String {
+        guard let whisper else {
+            throw WhisperManagerError.modelNotLoaded
+        }
+
+        guard !frames.isEmpty else {
+            return ""
+        }
+
+        // Set initial_prompt for decoder context continuity between chunks
+        if let previousText, !previousText.isEmpty {
+            let promptCString = strdup(previousText)
+            whisper.params.initial_prompt = UnsafePointer(promptCString)
+            defer { free(promptCString) }
+        }
+
+        let audioDuration = Double(frames.count) / 16000.0
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let segments: [Segment]
+        do {
+            segments = try await whisper.transcribe(audioFrames: frames)
+        } catch {
+            logger.error("Chunk transcription failed: \(error.localizedDescription)")
+            throw WhisperManagerError.transcriptionFailed(error.localizedDescription)
+        }
+
+        // Reset initial_prompt after use
+        whisper.params.initial_prompt = nil
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let text = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        logger.info("Chunk transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio")
         return text
     }
 
