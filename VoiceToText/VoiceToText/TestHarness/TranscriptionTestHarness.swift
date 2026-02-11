@@ -216,6 +216,23 @@ final class TranscriptionTestHarness {
             )
             let decodeLatencyMs = (CFAbsoluteTimeGetCurrent() - decodeStart) * 1000
 
+            // Log raw decode tokens for diagnostics
+            let commitHorizon = window.windowEndAbsMs - config.pipelineConfig.commitMarginMs
+            var tokenSummary: [String] = []
+            for seg in result.segments {
+                if seg.tokens.isEmpty {
+                    tokenSummary.append("[\(seg.text)|\(seg.startTimeMs + result.windowStartAbsMs)-\(seg.endTimeMs + result.windowStartAbsMs)]")
+                } else {
+                    for tok in seg.tokens {
+                        let absEnd = tok.endTimeMs + result.windowStartAbsMs
+                        let marker = absEnd <= commitHorizon ? "C" : "S"
+                        tokenSummary.append("[\(tok.text.trimmingCharacters(in: .whitespaces))|\(absEnd)ms|\(marker)|p\(String(format: "%.2f", tok.probability))]")
+                    }
+                }
+            }
+            log("  Tokens: \(tokenSummary.joined(separator: " "))")
+            log("  Horizon: \(commitHorizon)ms, committedWords: \(stabilizer.state.committedWordCount)")
+
             // Update stabilizer
             stabilizer.update(
                 decodeResult: result,

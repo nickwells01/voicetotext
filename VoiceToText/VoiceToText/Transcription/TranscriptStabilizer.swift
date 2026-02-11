@@ -4,11 +4,17 @@ import os
 // MARK: - Transcript State
 
 struct TranscriptState {
+    // Core state (consumed by pipeline & UI)
     var rawCommitted: String = ""
     var rawSpeculative: String = ""
-    var committedEndAbsMs: Int = 0
-    var recentCommittedTokenTexts: [String] = []
+
+    // Speculative flicker hold
     var lastSpeculativeUpdateAbsMs: Int = 0
+
+    // LocalAgreement-2 state
+    var previousDecodeRawWords: [String] = []
+    var previousDecodeNormalizedWords: [String] = []
+    var committedWordCount: Int = 0
 
     var fullRawText: String {
         rawSpeculative.isEmpty ? rawCommitted
@@ -18,9 +24,9 @@ struct TranscriptState {
 
 // MARK: - Transcript Stabilizer
 
-/// Manages the commit horizon for streaming transcription.
-/// Tokens whose absolute end time falls before the commit horizon are committed (locked);
-/// tokens after the horizon remain speculative and may be replaced on the next decode.
+/// Manages the commit horizon for streaming transcription using LocalAgreement-2.
+/// If 2 consecutive decodes agree on a word prefix, that prefix is confirmed.
+/// No token timestamps are used in commit decisions.
 final class TranscriptStabilizer {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "TranscriptStabilizer")
 
@@ -28,140 +34,98 @@ final class TranscriptStabilizer {
 
     // MARK: - Update
 
-    /// Process a new decode result, committing tokens that fall before the commit horizon.
+    /// Process a new decode result using LocalAgreement-2.
+    /// `commitMarginMs` and `minTokenProbability` are accepted for API compatibility but unused.
     @discardableResult
     func update(decodeResult: DecodeResult,
                 windowEndAbsMs: Int,
                 commitMarginMs: Int,
                 minTokenProbability: Float = 0.25) -> TranscriptState {
 
-        let commitHorizonAbsMs = windowEndAbsMs - commitMarginMs
+        // 1. Join all segment texts into full decode text
+        let fullText = decodeResult.segments.map { $0.text }.joined()
 
-        // Flatten all tokens from all segments with absolute timing and probability
-        var allTokens: [(text: String, absStartMs: Int, absEndMs: Int, probability: Float)] = []
+        // 2. Split decode output into raw words (preserve casing) and normalized words
+        let decodeRaw = fullText.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+        let decodeNorm = decodeRaw.map { normalizeWord($0) }
 
-        for segment in decodeResult.segments {
-            if segment.tokens.isEmpty {
-                // Segment-level fallback when no token-level timestamps available
-                let absStart = segment.startTimeMs + decodeResult.windowStartAbsMs
-                let absEnd = segment.endTimeMs + decodeResult.windowStartAbsMs
-                allTokens.append((
-                    text: segment.text,
-                    absStartMs: absStart,
-                    absEndMs: absEnd,
-                    probability: 1.0  // No token-level data; don't filter
-                ))
+        guard !decodeRaw.isEmpty else { return state }
+
+        // 3. Reconstruct full transcript word arrays.
+        // Whisper's prompted decode may output either (a) the full text from the
+        // beginning of the window, or (b) just continuation after the prompt.
+        // Normalize to a consistent "full text" by detecting overlap with committed.
+        let committedRaw = state.rawCommitted
+            .split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+        let committedNorm = committedRaw.map { normalizeWord($0) }
+
+        let fullRawWords: [String]
+        let fullNormWords: [String]
+
+        if committedNorm.isEmpty {
+            // Nothing committed yet — decode is the full text
+            fullRawWords = decodeRaw
+            fullNormWords = decodeNorm
+        } else {
+            // Check if decode starts by reproducing committed text (full re-transcription)
+            let prefixMatch = longestCommonPrefix(committedNorm, decodeNorm)
+            if prefixMatch >= committedNorm.count {
+                // Decode contains all committed words — use decode as full text
+                fullRawWords = decodeRaw
+                fullNormWords = decodeNorm
+            } else if prefixMatch > 0 {
+                // Partial prefix match — Whisper re-transcribed from beginning but diverged.
+                // Use decode as the full text (commit logic will handle the divergence)
+                fullRawWords = decodeRaw
+                fullNormWords = decodeNorm
             } else {
-                for token in segment.tokens {
-                    let absStart = token.startTimeMs + decodeResult.windowStartAbsMs
-                    let absEnd = token.endTimeMs + decodeResult.windowStartAbsMs
-                    allTokens.append((
-                        text: token.text,
-                        absStartMs: absStart,
-                        absEndMs: absEnd,
-                        probability: token.probability
-                    ))
+                // No prefix match — decode is a continuation.
+                // Check if decode starts with words that overlap the end of committed
+                // (Whisper may replay a few committed words for context).
+                var suffixOverlap = 0
+                let maxCheck = min(committedNorm.count, decodeNorm.count)
+                for len in stride(from: maxCheck, through: 2, by: -1) {
+                    if Array(committedNorm.suffix(len)) == Array(decodeNorm.prefix(len)) {
+                        suffixOverlap = len
+                        break
+                    }
                 }
+                let newRaw = Array(decodeRaw.dropFirst(suffixOverlap))
+                let newNorm = Array(decodeNorm.dropFirst(suffixOverlap))
+                fullRawWords = committedRaw + newRaw
+                fullNormWords = committedNorm + newNorm
             }
         }
 
-        // Phase 4: Filter low-probability tokens (hallucination suppression).
-        // Skip filtering when probability is 0 (no data available from Whisper).
-        if minTokenProbability > 0 {
-            allTokens = allTokens.filter { $0.probability == 0 || $0.probability >= minTokenProbability }
-        }
+        // 4. LocalAgreement-2: compare full words with previous tick
+        let commonPrefixLen = longestCommonPrefix(state.previousDecodeNormalizedWords, fullNormWords)
 
-        // Phase 5: Text-based overlap detection to handle timestamp jitter.
-        // Exact token-level suffix-prefix match: find the longest suffix of recently
-        // committed token texts matching a prefix of new tokens by text.
-        var textOverlapSkipCount = 0
-        if !state.recentCommittedTokenTexts.isEmpty && !allTokens.isEmpty {
-            let newNormalized = allTokens.map { normalizeTokenText($0.text) }
-            let recentTexts = state.recentCommittedTokenTexts
-            let maxCheck = min(recentTexts.count, newNormalized.count)
-            for len in stride(from: maxCheck, through: 1, by: -1) {
-                let suffix = Array(recentTexts.suffix(len))
-                let prefix = Array(newNormalized.prefix(len))
-                if suffix == prefix {
-                    textOverlapSkipCount = len
-                    break
-                }
-            }
-        }
-
-        // Partition into committed and speculative.
+        // 5. Words in [committedWordCount..<commonPrefixLen] are newly confirmed
         let committedBefore = state.rawCommitted
-        var newCommittedTexts: [String] = []
-        var speculativeTexts: [String] = []
+        if commonPrefixLen > state.committedWordCount
+            && commonPrefixLen <= state.previousDecodeRawWords.count {
+            let newlyConfirmed = state.previousDecodeRawWords[state.committedWordCount..<commonPrefixLen]
+            let newText = newlyConfirmed.joined(separator: " ")
 
-        for (i, token) in allTokens.enumerated() {
-            // Skip tokens identified as overlap by text matching
-            if i < textOverlapSkipCount {
-                continue
-            }
-
-            // Skip tokens within the already-committed region (30ms jitter tolerance
-            // covers Whisper's 10-20ms timestamp jitter across overlapping windows)
-            if token.absEndMs <= state.committedEndAbsMs + 30 {
-                continue
-            }
-
-            if token.absEndMs <= commitHorizonAbsMs {
-                newCommittedTexts.append(token.text)
-                state.committedEndAbsMs = token.absEndMs
+            if state.rawCommitted.isEmpty {
+                state.rawCommitted = newText
             } else {
-                speculativeTexts.append(token.text)
+                state.rawCommitted += " " + newText
             }
+
+            // Remove repeated phrases (hallucination safety net)
+            state.rawCommitted = removeRepeatedPhrases(state.rawCommitted)
+            state.rawCommitted = normalizeWhitespace(state.rawCommitted)
+
+            state.committedWordCount = commonPrefixLen
         }
 
-        // Append new committed tokens
-        if !newCommittedTexts.isEmpty {
-            // Tokens carry their own leading spaces (e.g. " Hello", " world").
-            // Join without separator to preserve natural spacing.
-            let newText = newCommittedTexts.joined()
-            if !newText.isEmpty {
-                let previousCommitted = state.rawCommitted
-                // Tokens typically have leading spaces; only add a space separator
-                // if the new text doesn't already start with whitespace.
-                if state.rawCommitted.isEmpty {
-                    state.rawCommitted = newText
-                } else if newText.first?.isWhitespace == true {
-                    state.rawCommitted += newText
-                } else {
-                    state.rawCommitted += " " + newText
-                }
-                // Guard: committed text should never shrink
-                if state.rawCommitted.count < previousCommitted.count {
-                    logger.warning("Committed text would shrink from \(previousCommitted.count) to \(self.state.rawCommitted.count) chars, keeping previous")
-                    state.rawCommitted = previousCommitted
-                }
-
-                // Remove repeated phrases (consecutive and non-consecutive) that
-                // slipped through overlap detection
-                state.rawCommitted = removeRepeatedPhrases(state.rawCommitted)
-
-                // Track committed token texts for future overlap detection
-                let normalized = newCommittedTexts.map { normalizeTokenText($0) }.filter { !$0.isEmpty }
-                state.recentCommittedTokenTexts.append(contentsOf: normalized)
-                let maxRecentTokens = 80
-                if state.recentCommittedTokenTexts.count > maxRecentTokens {
-                    state.recentCommittedTokenTexts.removeFirst(
-                        state.recentCommittedTokenTexts.count - maxRecentTokens
-                    )
-                }
-            }
-        }
-
-        // Normalize committed whitespace before speculative hold check
-        state.rawCommitted = normalizeWhitespace(state.rawCommitted)
-
-        // Compute new speculative text (normalized)
-        let newSpeculative = normalizeWhitespace(speculativeTexts.joined())
+        // 6. Words after commonPrefixLen are speculative
+        let speculativeWords = fullRawWords.suffix(from: min(commonPrefixLen, fullRawWords.count))
+        let newSpeculative = normalizeWhitespace(speculativeWords.joined(separator: " "))
         let committedGrew = state.rawCommitted != committedBefore
 
-        // Speculative stability hold: suppress non-additive speculative changes
-        // to reduce visual flicker. Allow updates when committed grew or first
-        // adding speculative text. Hold disruptive changes until timer expires.
+        // 7. Speculative stability hold (same anti-flicker logic)
         if committedGrew || state.rawSpeculative.isEmpty {
             state.rawSpeculative = newSpeculative
             state.lastSpeculativeUpdateAbsMs = windowEndAbsMs
@@ -170,33 +134,46 @@ final class TranscriptStabilizer {
             let isAdditive = !newSpeculative.isEmpty && (
                 newSpeculative.contains(state.rawSpeculative)
                 || state.rawSpeculative.contains(newSpeculative))
-            // Allow additive changes immediately; hold disruptive changes and
-            // clearing for up to 500ms to absorb decode-to-decode jitter.
             if isAdditive || elapsed >= 500 {
                 state.rawSpeculative = newSpeculative
                 state.lastSpeculativeUpdateAbsMs = windowEndAbsMs
             }
-            // else: keep old speculative text (suppress flicker)
         }
+
+        // 8. Store full word arrays for next tick's comparison
+        state.previousDecodeRawWords = fullRawWords
+        state.previousDecodeNormalizedWords = fullNormWords
 
         return state
     }
 
     // MARK: - Finalize
 
-    /// Commit everything with margin=0 (used when recording stops).
+    /// Commit everything (used when recording stops).
     @discardableResult
     func finalizeAll() -> TranscriptState {
         if !state.rawSpeculative.isEmpty {
-            if state.rawCommitted.isEmpty {
+            // Skip speculative text if it's already present in committed text
+            // (Whisper often echoes the last few committed words as speculative)
+            let specNorm = state.rawSpeculative.lowercased()
+                .trimmingCharacters(in: .punctuationCharacters)
+                .trimmingCharacters(in: .whitespaces)
+            let commitNorm = state.rawCommitted.lowercased()
+
+            if specNorm.isEmpty || commitNorm.contains(specNorm) {
+                // Echo — discard
+            } else if state.rawCommitted.isEmpty {
                 state.rawCommitted = state.rawSpeculative
             } else {
                 state.rawCommitted += " " + state.rawSpeculative
             }
             state.rawSpeculative = ""
         }
-        state.rawCommitted = removeRepeatedPhrases(state.rawCommitted)
+        state.rawCommitted = removeRepeatedPhrases(state.rawCommitted, minNonConsecutivePhraseLen: 3)
         state.rawCommitted = normalizeWhitespace(state.rawCommitted)
+        // Clear LocalAgreement state
+        state.previousDecodeRawWords = []
+        state.previousDecodeNormalizedWords = []
         return state
     }
 
@@ -208,8 +185,20 @@ final class TranscriptStabilizer {
 
     // MARK: - Internal
 
-    private func normalizeTokenText(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespaces).lowercased()
+    /// Normalize a word for comparison: lowercase, strip edge punctuation.
+    private func normalizeWord(_ word: String) -> String {
+        word.lowercased().trimmingCharacters(in: .punctuationCharacters)
+    }
+
+    /// Find the length of the longest common prefix between two word arrays.
+    private func longestCommonPrefix(_ a: [String], _ b: [String]) -> Int {
+        let limit = min(a.count, b.count)
+        for i in 0..<limit {
+            if a[i] != b[i] {
+                return i
+            }
+        }
+        return limit
     }
 
     private func normalizeWhitespace(_ text: String) -> String {
@@ -217,35 +206,27 @@ final class TranscriptStabilizer {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Split text into normalized content words (lowercased, punctuation-stripped, non-empty).
-    /// Handles Whisper retokenization by working from natural text rather than token boundaries.
-    private func normalizeWords(_ text: String) -> [String] {
-        text.split(separator: " ", omittingEmptySubsequences: true)
-            .map { String($0).lowercased().trimmingCharacters(in: .punctuationCharacters) }
-            .filter { !$0.isEmpty }
-    }
-
     /// Remove repeated word phrases from text — both consecutive and non-consecutive.
     /// Catches stabilizer artifacts like "jumps over the lazy jumps over the lazy dog"
     /// where the same phrase appears twice due to overlapping window re-decoding.
-    private func removeRepeatedPhrases(_ text: String) -> String {
+    private func removeRepeatedPhrases(_ text: String, minNonConsecutivePhraseLen: Int = 2) -> String {
         var words = text.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
 
-        // Pass 1: Remove non-consecutive repeated phrases (2-6 words).
+        // Pass 1: Remove non-consecutive repeated phrases.
         // Only remove the LATER occurrence (preserves the first, which was committed first).
-        // Minimum 2 words prevents false removal of single common words like "the".
-        for phraseLen in stride(from: 6, through: 2, by: -1) {
+        // Compare using normalizeWord (lowercase + strip edge punctuation) so that
+        // "seashells." matches "seashells" across decode boundaries.
+        for phraseLen in stride(from: 6, through: minNonConsecutivePhraseLen, by: -1) {
             var i = 0
             while i + phraseLen <= words.count {
-                let phrase = words[i..<(i + phraseLen)].map { $0.lowercased() }
+                let phrase = words[i..<(i + phraseLen)].map { normalizeWord($0) }
                 // Search for this same phrase later in the text
                 var j = i + 1
                 while j + phraseLen <= words.count {
-                    let candidate = words[j..<(j + phraseLen)].map { $0.lowercased() }
+                    let candidate = words[j..<(j + phraseLen)].map { normalizeWord($0) }
                     if phrase == candidate {
                         words.removeSubrange(j..<(j + phraseLen))
-                        // Also remove any preceding punctuation-only words that
-                        // were separating the two occurrences (e.g. "sells . She" → "sells")
+                        // Also remove any preceding punctuation-only words
                         while j > 0 && j <= words.count {
                             let prev = words[j - 1]
                             if prev.allSatisfy({ $0.isPunctuation || $0 == "-" }) {
@@ -269,7 +250,7 @@ final class TranscriptStabilizer {
             while i + phraseLen * 2 - 1 < words.count {
                 let phrase = Array(words[i..<(i + phraseLen)])
                 let next = Array(words[(i + phraseLen)..<(i + phraseLen * 2)])
-                if phrase.map({ $0.lowercased() }) == next.map({ $0.lowercased() }) {
+                if phrase.map({ normalizeWord($0) }) == next.map({ normalizeWord($0) }) {
                     words.removeSubrange((i + phraseLen)..<(i + phraseLen * 2))
                 } else {
                     i += 1
@@ -278,18 +259,15 @@ final class TranscriptStabilizer {
         }
 
         // Pass 3: Remove punctuation + single-word artifacts.
-        // When a standalone punctuation mark is followed by a word that already
-        // appeared within the last 3 words before the punctuation, it's a
-        // sentence-boundary hallucination. E.g. "She sells . She" → "She sells".
         var k = 0
         while k + 1 < words.count {
             let punctWord = words[k]
             if punctWord.allSatisfy({ $0.isPunctuation || $0 == "-" }) && k > 0 && k + 1 < words.count {
-                let after = words[k + 1].lowercased()
+                let after = normalizeWord(words[k + 1])
                 let lookback = min(3, k)
                 var found = false
                 for b in 1...lookback {
-                    if words[k - b].lowercased() == after {
+                    if normalizeWord(words[k - b]) == after {
                         found = true
                         break
                     }
