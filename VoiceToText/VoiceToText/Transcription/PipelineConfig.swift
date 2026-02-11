@@ -21,6 +21,9 @@ struct PipelineConfig: Codable, Equatable {
     var maxTickMs: Int = 500
     var minWindowMs: Int = 4000
 
+    // Accumulate-and-trim: max accumulated audio before trimming at sentence boundary
+    var maxBufferMs: Int = 20000
+
     // MARK: - Persistence
 
     static let storageKey = "pipelineConfig"

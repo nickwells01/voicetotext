@@ -151,7 +151,9 @@ final class TranscriptionTestHarness {
 
         var tickMetricsList: [TickMetrics] = []
         var fullAudioSamples: [Float] = []
+        var accTrimOffset = 0
         var previousSpeculative = ""
+        var trimEvents = 0
 
         // Tick loop
         var tickIndex = 0
@@ -171,23 +173,22 @@ final class TranscriptionTestHarness {
                 try await Task.sleep(nanoseconds: UInt64(tickMs) * 1_000_000)
             }
 
-            // Get window from ring buffer
-            let window = ringBuffer.getWindow()
-            guard !window.pcm.isEmpty else {
+            // --- Silence detection: use ring buffer (recent window) ---
+            let ringWindow = ringBuffer.getWindow()
+            guard !ringWindow.pcm.isEmpty else {
                 tickIndex += 1
                 continue
             }
 
-            // Silence check
             let isSilent = silenceDetector.update(
-                samples: window.pcm,
-                currentAbsMs: window.windowEndAbsMs
+                samples: ringWindow.pcm,
+                currentAbsMs: ringWindow.windowEndAbsMs
             )
 
             if isSilent {
                 let metrics = TickMetrics(
                     index: tickIndex,
-                    audioPositionMs: window.windowEndAbsMs,
+                    audioPositionMs: ringWindow.windowEndAbsMs,
                     decodeLatencyMs: 0,
                     committed: stabilizer.state.rawCommitted,
                     speculative: stabilizer.state.rawSpeculative,
@@ -195,11 +196,16 @@ final class TranscriptionTestHarness {
                     isSilent: true
                 )
                 tickMetricsList.append(metrics)
-                log("Tick \(tickIndex): SILENT @ \(window.windowEndAbsMs)ms")
+                log("Tick \(tickIndex): SILENT @ \(ringWindow.windowEndAbsMs)ms")
                 previousSpeculative = stabilizer.state.rawSpeculative
                 tickIndex += 1
                 continue
             }
+
+            // --- Whisper decode: use accumulated window (grows until trimmed) ---
+            let accPcm = Array(fullAudioSamples[accTrimOffset...])
+            let accStartMs = (accTrimOffset * 1000) / sampleRate
+            let accEndMs = (fullAudioSamples.count * 1000) / sampleRate
 
             // Build prompt from committed text
             let prompt = buildPrompt(
@@ -210,14 +216,14 @@ final class TranscriptionTestHarness {
             // Decode
             let decodeStart = CFAbsoluteTimeGetCurrent()
             let result = try await whisperManager.transcribeWindow(
-                frames: window.pcm,
-                windowStartAbsMs: window.windowStartAbsMs,
+                frames: accPcm,
+                windowStartAbsMs: accStartMs,
                 prompt: prompt
             )
             let decodeLatencyMs = (CFAbsoluteTimeGetCurrent() - decodeStart) * 1000
 
             // Log raw decode tokens for diagnostics
-            let commitHorizon = window.windowEndAbsMs - config.pipelineConfig.commitMarginMs
+            let commitHorizon = accEndMs - config.pipelineConfig.commitMarginMs
             var tokenSummary: [String] = []
             for seg in result.segments {
                 if seg.tokens.isEmpty {
@@ -236,14 +242,14 @@ final class TranscriptionTestHarness {
             // Update stabilizer
             stabilizer.update(
                 decodeResult: result,
-                windowEndAbsMs: window.windowEndAbsMs,
+                windowEndAbsMs: accEndMs,
                 commitMarginMs: config.pipelineConfig.commitMarginMs,
                 minTokenProbability: config.pipelineConfig.minTokenProbability
             )
 
             let metrics = TickMetrics(
                 index: tickIndex,
-                audioPositionMs: window.windowEndAbsMs,
+                audioPositionMs: accEndMs,
                 decodeLatencyMs: decodeLatencyMs,
                 committed: stabilizer.state.rawCommitted,
                 speculative: stabilizer.state.rawSpeculative,
@@ -254,9 +260,37 @@ final class TranscriptionTestHarness {
 
             log("Tick \(tickIndex): \(String(format: "%.0f", decodeLatencyMs))ms | C: \"\(stabilizer.state.rawCommitted.suffix(60))\" | S: \"\(stabilizer.state.rawSpeculative.suffix(40))\"")
 
+            // --- Trim check ---
+            let accDurationMs = accEndMs - accStartMs
+            if accDurationMs > config.pipelineConfig.maxBufferMs {
+                let committed = stabilizer.state.rawCommitted
+                let words = committed.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+                if words.count > 3 {
+                    // Find the first sentence boundary in the first half of committed text
+                    let midPoint = words.count / 2
+                    var sentenceBoundaryWordIndex: Int? = nil
+                    for i in 0...midPoint {
+                        let word = words[i]
+                        if word.hasSuffix(".") || word.hasSuffix("!") || word.hasSuffix("?") {
+                            sentenceBoundaryWordIndex = i
+                        }
+                    }
+                    let trimWordIndex = sentenceBoundaryWordIndex ?? (words.count * 2 / 5)
+                    if trimWordIndex > 0 {
+                        let availableSamples = fullAudioSamples.count - accTrimOffset
+                        let fraction = Double(trimWordIndex + 1) / Double(words.count)
+                        accTrimOffset = accTrimOffset + Int(fraction * Double(availableSamples))
+                        trimEvents += 1
+                        log("  TRIM at word \(trimWordIndex)/\(words.count), ~\(Int(fraction * 100))% of audio, new acc duration: \((fullAudioSamples.count - accTrimOffset) * 1000 / sampleRate)ms")
+                    }
+                }
+            }
+
             previousSpeculative = stabilizer.state.rawSpeculative
             tickIndex += 1
         }
+
+        log("Trim events: \(trimEvents)")
 
         // Finalize
         stabilizer.finalizeAll()

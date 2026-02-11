@@ -186,13 +186,13 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        guard let window = recordingSession.audioRecorder.getLatestWindow(),
-              !window.pcm.isEmpty else {
+        // --- Silence detection: use ring buffer (recent 8s window) ---
+        guard let ringWindow = recordingSession.audioRecorder.getLatestWindow(),
+              !ringWindow.pcm.isEmpty else {
             return
         }
 
-        // Check for silence and update audio levels
-        let isSilent = silenceDetector.update(samples: window.pcm, currentAbsMs: window.windowEndAbsMs)
+        let isSilent = silenceDetector.update(samples: ringWindow.pcm, currentAbsMs: ringWindow.windowEndAbsMs)
 
         // Update waveform visualization (rolling buffer of recent RMS levels)
         let maxLevels = 30
@@ -205,13 +205,16 @@ final class TranscriptionPipeline: ObservableObject {
             return  // Silence detected, skip decode to save resources
         }
 
+        // --- Whisper decode: use accumulated window (grows until trimmed) ---
+        guard let accWindow = recordingSession.audioRecorder.getAccumulatedWindow() else { return }
+
         isDecoding = true
 
         let prompt = buildPrompt(from: stabilizer.state.rawCommitted)
 
-        let windowStartAbsMs = window.windowStartAbsMs
-        let windowEndAbsMs = window.windowEndAbsMs
-        let frames = window.pcm
+        let windowStartAbsMs = accWindow.windowStartAbsMs
+        let windowEndAbsMs = accWindow.windowEndAbsMs
+        let frames = accWindow.pcm
         let commitMarginMs = appState.pipelineConfig.commitMarginMs
 
         Task {
@@ -230,6 +233,7 @@ final class TranscriptionPipeline: ObservableObject {
                         minTokenProbability: self.appState.pipelineConfig.minTokenProbability
                     )
                     self.updateUIFromStabilizer()
+                    self.trimIfNeeded()
                     self.isDecoding = false
 
                     if self.needsRedecode {
@@ -244,6 +248,47 @@ final class TranscriptionPipeline: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Accumulate-and-Trim
+
+    /// Trim accumulated audio at a sentence boundary in the first half of committed text,
+    /// keeping enough trailing audio for Whisper to produce overlapping output with LA-2.
+    private func trimIfNeeded() {
+        let config = appState.pipelineConfig
+        let durationMs = recordingSession.audioRecorder.accumulatedDurationMs
+        guard durationMs > config.maxBufferMs else { return }
+
+        let committed = stabilizer.state.rawCommitted
+        guard !committed.isEmpty else { return }
+
+        let words = committed.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+        guard words.count > 3 else { return }
+
+        // Find the first sentence boundary in the first half of committed text.
+        // This keeps ~50%+ of audio as context for stable Whisper overlap.
+        let midPoint = words.count / 2
+        var sentenceBoundaryWordIndex: Int? = nil
+        for i in 0...midPoint {
+            let word = words[i]
+            if word.hasSuffix(".") || word.hasSuffix("!") || word.hasSuffix("?") {
+                sentenceBoundaryWordIndex = i
+            }
+        }
+
+        // If no sentence boundary in first half, force-trim at ~40% of committed words
+        let trimWordIndex = sentenceBoundaryWordIndex ?? (words.count * 2 / 5)
+        guard trimWordIndex > 0 else { return }
+
+        // Estimate audio position proportionally
+        let totalSamples = recordingSession.audioRecorder.totalSamplesRecorded
+        let accTrimOffset = recordingSession.audioRecorder.currentTrimOffset
+        let availableSamples = totalSamples - accTrimOffset
+        let fraction = Double(trimWordIndex + 1) / Double(words.count)
+        let trimSampleOffset = accTrimOffset + Int(fraction * Double(availableSamples))
+
+        recordingSession.audioRecorder.trimAccumulated(toSampleOffset: trimSampleOffset)
+        logger.info("Trimmed audio buffer at word \(trimWordIndex)/\(words.count), ~\(Int(fraction * 100))% of audio, new duration: \(self.recordingSession.audioRecorder.accumulatedDurationMs)ms")
     }
 
     // MARK: - UI Updates

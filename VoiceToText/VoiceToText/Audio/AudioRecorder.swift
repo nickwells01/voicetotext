@@ -52,14 +52,42 @@ final class AudioRecorder {
     /// (the ring buffer only retains the most recent window).
     private var fullAudioSamples: [Float] = []
 
+    /// Trim offset for accumulate-and-trim: audio before this index is
+    /// considered already committed and is excluded from the decode window.
+    private var accTrimOffset: Int = 0
+
     /// Total samples recorded in this session.
     var totalSamplesRecorded: Int {
         ringBuffer?.totalSamplesWritten ?? 0
     }
 
+    /// Current trim offset (read-only) for proportional trim calculations.
+    var currentTrimOffset: Int { accTrimOffset }
+
     /// Returns all audio samples recorded in this session.
     func getFullAudio() -> [Float] {
         return fullAudioSamples
+    }
+
+    // MARK: - Accumulated Window (for Whisper decode)
+
+    /// Audio from trim offset to end — grows until trimmed at sentence boundaries.
+    func getAccumulatedWindow() -> (pcm: [Float], windowStartAbsMs: Int, windowEndAbsMs: Int)? {
+        guard accTrimOffset < fullAudioSamples.count else { return nil }
+        let pcm = Array(fullAudioSamples[accTrimOffset...])
+        let startMs = (accTrimOffset * 1000) / Int(Self.targetSampleRate)
+        let endMs = (fullAudioSamples.count * 1000) / Int(Self.targetSampleRate)
+        return (pcm, startMs, endMs)
+    }
+
+    /// Advance trim offset (only moves forward, never backward).
+    func trimAccumulated(toSampleOffset offset: Int) {
+        accTrimOffset = max(accTrimOffset, offset)
+    }
+
+    /// Duration of accumulated audio from trim offset to end, in milliseconds.
+    var accumulatedDurationMs: Int {
+        ((fullAudioSamples.count - accTrimOffset) * 1000) / Int(Self.targetSampleRate)
     }
 
     // MARK: - Start Capture
@@ -72,6 +100,7 @@ final class AudioRecorder {
 
         self.ringBuffer = ringBuffer
         self.fullAudioSamples = []
+        self.accTrimOffset = 0
 
         let inputNode = audioEngine.inputNode
 
