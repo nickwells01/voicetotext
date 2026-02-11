@@ -58,7 +58,7 @@ final class PasteCoordinator {
         appState.lastTranscription = finalText
 
         // Brief settle time for window server
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        try? await Task.sleep(nanoseconds: 30_000_000) // 30ms
 
         // Try direct text insertion first (preserves clipboard)
         if preferDirectInsertion {

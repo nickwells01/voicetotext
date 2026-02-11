@@ -10,6 +10,7 @@ struct PipelineConfig: Codable, Equatable {
     var maxPromptChars: Int = 1200
     var silenceMs: Int = 900
     var noSpeechThreshold: Float = 0.75
+    var minTokenProbability: Float = 0.25
     var maxSessionMinutes: Int = 30
 
     var windowSamples: Int { sampleRate * windowMs / 1000 }

@@ -59,10 +59,7 @@ actor WhisperManager {
             // Use all available cores for maximum speed
             params.n_threads = Int32(ProcessInfo.processInfo.activeProcessorCount)
 
-            // Skip segment boundary detection — we want one result fast
-            params.single_segment = true
-
-            // Disable temperature fallback retries (default retries up to 3x on low confidence)
+            // Disable temperature fallback retries for streaming (speed matters)
             params.temperature_inc = 0.0
 
             // Skip candidate comparison (default best_of=2)
@@ -231,14 +228,15 @@ actor WhisperManager {
         }
         guard !frames.isEmpty else { return "" }
 
-        // Temporarily allow multi-segment output for full audio
-        let savedSingleSegment = whisper.params.single_segment
+        // Enable temperature fallback for finalization (retry low-confidence segments)
+        let savedTempInc = whisper.params.temperature_inc
+        whisper.params.temperature_inc = 0.2
         whisper.params.single_segment = false
         whisper.params.token_timestamps = false
         whisper.params.initial_prompt = nil
 
         defer {
-            whisper.params.single_segment = savedSingleSegment
+            whisper.params.temperature_inc = savedTempInc
             whisper.params.token_timestamps = false
         }
 

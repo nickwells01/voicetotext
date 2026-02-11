@@ -7,7 +7,7 @@ struct TranscriptState {
     var rawCommitted: String = ""
     var rawSpeculative: String = ""
     var committedEndAbsMs: Int = 0
-    var cleanedCommitted: String?
+    var recentCommittedTokenTexts: [String] = []
 
     var fullRawText: String {
         rawSpeculative.isEmpty ? rawCommitted
@@ -31,12 +31,13 @@ final class TranscriptStabilizer {
     @discardableResult
     func update(decodeResult: DecodeResult,
                 windowEndAbsMs: Int,
-                commitMarginMs: Int) -> TranscriptState {
+                commitMarginMs: Int,
+                minTokenProbability: Float = 0.25) -> TranscriptState {
 
         let commitHorizonAbsMs = windowEndAbsMs - commitMarginMs
 
-        // Flatten all tokens from all segments with absolute timing
-        var allTokens: [(text: String, absStartMs: Int, absEndMs: Int)] = []
+        // Flatten all tokens from all segments with absolute timing and probability
+        var allTokens: [(text: String, absStartMs: Int, absEndMs: Int, probability: Float)] = []
 
         for segment in decodeResult.segments {
             if segment.tokens.isEmpty {
@@ -46,7 +47,8 @@ final class TranscriptStabilizer {
                 allTokens.append((
                     text: segment.text,
                     absStartMs: absStart,
-                    absEndMs: absEnd
+                    absEndMs: absEnd,
+                    probability: 1.0  // No token-level data; don't filter
                 ))
             } else {
                 for token in segment.tokens {
@@ -55,34 +57,58 @@ final class TranscriptStabilizer {
                     allTokens.append((
                         text: token.text,
                         absStartMs: absStart,
-                        absEndMs: absEnd
+                        absEndMs: absEnd,
+                        probability: token.probability
                     ))
                 }
             }
         }
 
+        // Phase 4: Filter low-probability tokens (hallucination suppression).
+        // Skip filtering when probability is 0 (no data available from Whisper).
+        if minTokenProbability > 0 {
+            allTokens = allTokens.filter { $0.probability == 0 || $0.probability >= minTokenProbability }
+        }
+
+        // Phase 5: Text-based overlap detection to handle timestamp jitter.
+        // Whisper token timestamps can jitter by 10-20ms across overlapping window
+        // decodes, causing the timestamp-based skip to miss duplicates. Find the
+        // longest suffix of recently committed token texts matching a prefix of new
+        // tokens by text, and skip those overlapping tokens.
+        var textOverlapSkipCount = 0
+        if !state.recentCommittedTokenTexts.isEmpty && !allTokens.isEmpty {
+            let newNormalized = allTokens.map { normalizeTokenText($0.text) }
+            let recentTexts = state.recentCommittedTokenTexts
+            let maxCheck = min(recentTexts.count, newNormalized.count)
+            for len in stride(from: maxCheck, through: 1, by: -1) {
+                let suffix = Array(recentTexts.suffix(len))
+                let prefix = Array(newNormalized.prefix(len))
+                if suffix == prefix {
+                    textOverlapSkipCount = len
+                    break
+                }
+            }
+        }
+
         // Partition into committed and speculative.
-        // A token is "new committed" if it ends before the commit horizon and doesn't
-        // fully overlap with already-committed audio. Tokens that partially overlap
-        // (start slightly before committedEndAbsMs) are still accepted to avoid
-        // dropping words during sliding-window re-decoding.
         var newCommittedTexts: [String] = []
         var speculativeTexts: [String] = []
 
-        for token in allTokens {
+        for (i, token) in allTokens.enumerated() {
+            // Skip tokens identified as overlap by text matching
+            if i < textOverlapSkipCount {
+                continue
+            }
+
             // Skip tokens that are entirely within the already-committed region
             if token.absEndMs <= state.committedEndAbsMs {
                 continue
             }
 
             if token.absEndMs <= commitHorizonAbsMs {
-                // Token ends before the commit horizon — commit it.
-                // Accept tokens that partially overlap with the committed region
-                // (absStartMs < committedEndAbsMs) to avoid gaps from re-decoding.
                 newCommittedTexts.append(token.text)
                 state.committedEndAbsMs = token.absEndMs
             } else {
-                // Token extends past the commit horizon — keep speculative
                 speculativeTexts.append(token.text)
             }
         }
@@ -107,6 +133,16 @@ final class TranscriptStabilizer {
                 if state.rawCommitted.count < previousCommitted.count {
                     logger.warning("Committed text would shrink from \(previousCommitted.count) to \(self.state.rawCommitted.count) chars, keeping previous")
                     state.rawCommitted = previousCommitted
+                }
+
+                // Track committed token texts for future overlap detection
+                let normalized = newCommittedTexts.map { normalizeTokenText($0) }.filter { !$0.isEmpty }
+                state.recentCommittedTokenTexts.append(contentsOf: normalized)
+                let maxRecentTokens = 30
+                if state.recentCommittedTokenTexts.count > maxRecentTokens {
+                    state.recentCommittedTokenTexts.removeFirst(
+                        state.recentCommittedTokenTexts.count - maxRecentTokens
+                    )
                 }
             }
         }
@@ -145,6 +181,10 @@ final class TranscriptStabilizer {
     }
 
     // MARK: - Internal
+
+    private func normalizeTokenText(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespaces).lowercased()
+    }
 
     private func normalizeWhitespace(_ text: String) -> String {
         text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)

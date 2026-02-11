@@ -101,7 +101,6 @@ final class LLMPostProcessor {
         if result == rawText {
             // First attempt returned raw text (failure), retry once
             logger.info("Local LLM first attempt returned raw text, retrying once...")
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
             return await manager.process(rawText: rawText)
         }
         return result

@@ -19,7 +19,6 @@ final class TranscriptionPipeline: ObservableObject {
     // MARK: - Extracted Components
 
     private let recordingSession = RecordingSession()
-    private let burstScheduler = LLMBurstScheduler()
     private let pasteCoordinator = PasteCoordinator()
 
     // MARK: - Pipeline Components
@@ -111,7 +110,6 @@ final class TranscriptionPipeline: ObservableObject {
         // Reset pipeline state
         stabilizer.reset()
         silenceDetector.reset()
-        burstScheduler.reset()
         isDecoding = false
         needsRedecode = false
         var llmConfig = appState.llmConfig
@@ -171,7 +169,6 @@ final class TranscriptionPipeline: ObservableObject {
         needsRedecode = false
         stabilizer.reset()
         silenceDetector.reset()
-        burstScheduler.reset()
         recordingSession.cleanup()
         cachedLLMConfig = nil
         appState.resetStreamingText()
@@ -229,7 +226,8 @@ final class TranscriptionPipeline: ObservableObject {
                     self.stabilizer.update(
                         decodeResult: result,
                         windowEndAbsMs: windowEndAbsMs,
-                        commitMarginMs: commitMarginMs
+                        commitMarginMs: commitMarginMs,
+                        minTokenProbability: self.appState.pipelineConfig.minTokenProbability
                     )
                     self.updateUIFromStabilizer()
                     self.isDecoding = false
@@ -237,14 +235,6 @@ final class TranscriptionPipeline: ObservableObject {
                     if self.needsRedecode {
                         self.needsRedecode = false
                         self.tick()
-                    }
-
-                    self.burstScheduler.maybeRunBurstClean(
-                        committedText: self.stabilizer.state.rawCommitted,
-                        llmConfig: self.cachedLLMConfig
-                    ) { [weak self] cleaned in
-                        self?.stabilizer.state.cleanedCommitted = cleaned
-                        self?.updateUIFromStabilizer()
                     }
                 }
             } catch {
@@ -260,7 +250,7 @@ final class TranscriptionPipeline: ObservableObject {
 
     private func updateUIFromStabilizer() {
         let state = stabilizer.state
-        var committed = state.cleanedCommitted ?? state.rawCommitted
+        var committed = state.rawCommitted
         var speculative = state.rawSpeculative
 
         // Apply filler word removal if enabled
@@ -283,19 +273,11 @@ final class TranscriptionPipeline: ObservableObject {
             try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         }
 
-        // Wait for any in-flight burst LLM clean to complete so it doesn't
-        // race with the final LLM processing below
-        while burstScheduler.isRunning {
-            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-        }
-
-        // Clear stale burst-cleaned text — final processing will re-clean the complete text
-        stabilizer.state.cleanedCommitted = nil
-
         // Perform an authoritative decode of ALL recorded audio.
         // The incremental stabilizer can lose words when Whisper produces different
         // tokenizations across sliding window boundaries. A single decode of the
-        // full audio avoids this entirely.
+        // full audio avoids this entirely. whisper_full() internally handles long
+        // audio via 30-second seek chunks, so this works for any recording length.
         let fullAudio = recordingSession.audioRecorder.getFullAudio()
         if !fullAudio.isEmpty {
             do {
@@ -303,27 +285,10 @@ final class TranscriptionPipeline: ObservableObject {
                 if !freshTranscription.isEmpty {
                     stabilizer.reset()
                     stabilizer.state.rawCommitted = freshTranscription
-                    logger.info("Full-audio decode: \(freshTranscription.count) chars")
+                    logger.info("Full-audio decode: \(freshTranscription.count) chars (\(fullAudio.count) samples)")
                 }
             } catch {
                 logger.error("Full-audio decode failed, falling back to stabilizer: \(error.localizedDescription)")
-                // Fall back to ring buffer decode + stabilizer
-                if let window = recordingSession.ringBuffer?.getWindow(), !window.pcm.isEmpty {
-                    do {
-                        let result = try await whisperManager.transcribeWindow(
-                            frames: window.pcm,
-                            windowStartAbsMs: window.windowStartAbsMs,
-                            prompt: buildPrompt(from: stabilizer.state.rawCommitted)
-                        )
-                        stabilizer.update(
-                            decodeResult: result,
-                            windowEndAbsMs: window.windowEndAbsMs,
-                            commitMarginMs: 0
-                        )
-                    } catch {
-                        logger.error("Ring buffer fallback decode also failed: \(error.localizedDescription)")
-                    }
-                }
             }
         }
 
@@ -415,7 +380,6 @@ final class TranscriptionPipeline: ObservableObject {
     private func cleanup() {
         stabilizer.reset()
         silenceDetector.reset()
-        burstScheduler.reset()
         recordingSession.cleanup()
         isDecoding = false
         needsRedecode = false
