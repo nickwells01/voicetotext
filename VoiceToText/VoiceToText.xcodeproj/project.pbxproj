@@ -35,6 +35,17 @@
 		DC35F779ADD2EA0609267443 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 068019CBCC6F6BDD8F39DE15 /* ModelManager.swift */; };
 		DD23C822838AC4B4644B64E2 /* FnKeyDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D27432E4E6D82F8A92065B /* FnKeyDetector.swift */; };
 		E8BF1FD5F898F703C5816064 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80FC5EF5BC231AEC12DABBD6 /* MenuBarView.swift */; };
+		B1A2C3D4E5F60015B1A2C3D4 /* RecordingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60005B1A2C3D4 /* RecordingSession.swift */; };
+		B1A2C3D4E5F60016B1A2C3D4 /* LLMBurstScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60006B1A2C3D4 /* LLMBurstScheduler.swift */; };
+		B1A2C3D4E5F60017B1A2C3D4 /* PasteCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60007B1A2C3D4 /* PasteCoordinator.swift */; };
+		B1A2C3D4E5F60018B1A2C3D4 /* FillerWordFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60008B1A2C3D4 /* FillerWordFilter.swift */; };
+		B1A2C3D4E5F60019B1A2C3D4 /* AIModePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60009B1A2C3D4 /* AIModePreset.swift */; };
+		B1A2C3D4E5F6001AB1A2C3D4 /* AppContextDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000AB1A2C3D4 /* AppContextDetector.swift */; };
+		B1A2C3D4E5F6001BB1A2C3D4 /* CustomVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000BB1A2C3D4 /* CustomVocabulary.swift */; };
+		B1A2C3D4E5F6001CB1A2C3D4 /* TranscriptionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000CB1A2C3D4 /* TranscriptionRecord.swift */; };
+		B1A2C3D4E5F6001DB1A2C3D4 /* TranscriptionHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */; };
+		B1A2C3D4E5F6001EB1A2C3D4 /* DirectTextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */; };
+		B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +73,17 @@
 		C4F471C22FA4A9B9913C20D5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		E503E6FF190350B5DCCADF66 /* VoiceToText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceToText.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EAF2BC9E20C734CF1E2FF28B /* RecordingOverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingOverlayWindow.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F60005B1A2C3D4 /* RecordingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSession.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F60006B1A2C3D4 /* LLMBurstScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMBurstScheduler.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F60007B1A2C3D4 /* PasteCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteCoordinator.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F60008B1A2C3D4 /* FillerWordFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillerWordFilter.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F60009B1A2C3D4 /* AIModePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModePreset.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000AB1A2C3D4 /* AppContextDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextDetector.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000BB1A2C3D4 /* CustomVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomVocabulary.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000CB1A2C3D4 /* TranscriptionRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionRecord.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionHistoryStore.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectTextInserter.swift; sourceTree = "<group>"; };
+		B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +121,10 @@
 				A1B2C3D4E5F60004A1B2C3D4 /* TranscriptStabilizer.swift */,
 				A4F7EC7F14C4AD91CF2AC66C /* WhisperManager.swift */,
 				8806ACD361DAAB06E80CC398 /* WhisperWrapper.swift */,
+				B1A2C3D4E5F60005B1A2C3D4 /* RecordingSession.swift */,
+				B1A2C3D4E5F60006B1A2C3D4 /* LLMBurstScheduler.swift */,
+				B1A2C3D4E5F60007B1A2C3D4 /* PasteCoordinator.swift */,
+				B1A2C3D4E5F60008B1A2C3D4 /* FillerWordFilter.swift */,
 			);
 			path = Transcription;
 			sourceTree = "<group>";
@@ -149,6 +175,11 @@
 			isa = PBXGroup;
 			children = (
 				9329CC2CFF345E3F822AA54B /* AppSettings.swift */,
+				B1A2C3D4E5F60009B1A2C3D4 /* AIModePreset.swift */,
+				B1A2C3D4E5F6000AB1A2C3D4 /* AppContextDetector.swift */,
+				B1A2C3D4E5F6000BB1A2C3D4 /* CustomVocabulary.swift */,
+				B1A2C3D4E5F6000CB1A2C3D4 /* TranscriptionRecord.swift */,
+				B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -181,6 +212,7 @@
 			isa = PBXGroup;
 			children = (
 				A392263026089454CDC5D7CE /* ClipboardPaster.swift */,
+				B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */,
 			);
 			path = Clipboard;
 			sourceTree = "<group>";
@@ -193,6 +225,7 @@
 				6B81A2A1CBEEC34DC3D57623 /* RecordingOverlayView.swift */,
 				EAF2BC9E20C734CF1E2FF28B /* RecordingOverlayWindow.swift */,
 				49B3B20C204B614030B44976 /* SettingsView.swift */,
+				B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -299,6 +332,17 @@
 				A1B2C3D4E5F60012A1B2C3D4 /* PipelineConfig.swift in Sources */,
 				A1B2C3D4E5F60013A1B2C3D4 /* SilenceDetector.swift in Sources */,
 				A1B2C3D4E5F60014A1B2C3D4 /* TranscriptStabilizer.swift in Sources */,
+				B1A2C3D4E5F60015B1A2C3D4 /* RecordingSession.swift in Sources */,
+				B1A2C3D4E5F60016B1A2C3D4 /* LLMBurstScheduler.swift in Sources */,
+				B1A2C3D4E5F60017B1A2C3D4 /* PasteCoordinator.swift in Sources */,
+				B1A2C3D4E5F60018B1A2C3D4 /* FillerWordFilter.swift in Sources */,
+				B1A2C3D4E5F60019B1A2C3D4 /* AIModePreset.swift in Sources */,
+				B1A2C3D4E5F6001AB1A2C3D4 /* AppContextDetector.swift in Sources */,
+				B1A2C3D4E5F6001BB1A2C3D4 /* CustomVocabulary.swift in Sources */,
+				B1A2C3D4E5F6001CB1A2C3D4 /* TranscriptionRecord.swift in Sources */,
+				B1A2C3D4E5F6001DB1A2C3D4 /* TranscriptionHistoryStore.swift in Sources */,
+				B1A2C3D4E5F6001EB1A2C3D4 /* DirectTextInserter.swift in Sources */,
+				B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

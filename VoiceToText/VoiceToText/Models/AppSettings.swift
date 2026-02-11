@@ -13,6 +13,13 @@ enum StorageKey {
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
     static let fnDoubleTapInterval = "fnDoubleTapInterval"
     static let fastMode = "fastMode"
+    static let fillerWordRemoval = "fillerWordRemoval"
+    static let soundFeedback = "soundFeedback"
+    static let privacyMode = "privacyMode"
+    static let selectedLanguage = "selectedLanguage"
+    static let customVocabulary = "customVocabulary"
+    static let aiModePresets = "aiModePresets"
+    static let activeAIModePresetId = "activeAIModePresetId"
 }
 
 // MARK: - Activation Mode

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Pipeline Configuration
 
-struct PipelineConfig {
+struct PipelineConfig: Codable, Equatable {
     var sampleRate: Int = 16000
     var tickMs: Int = 250
     var windowMs: Int = 8000        // min 4000, max 12000
@@ -19,4 +19,22 @@ struct PipelineConfig {
     // Adaptive backpressure
     var maxTickMs: Int = 500
     var minWindowMs: Int = 4000
+
+    // MARK: - Persistence
+
+    static let storageKey = "pipelineConfig"
+
+    static func load() -> PipelineConfig {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let config = try? JSONDecoder().decode(PipelineConfig.self, from: data) else {
+            return PipelineConfig()
+        }
+        return config
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: PipelineConfig.storageKey)
+        }
+    }
 }

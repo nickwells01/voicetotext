@@ -37,6 +37,8 @@ final class AppState: ObservableObject {
     @Published var toastMessage: String?
     @Published var errorMessage: String?
     @Published var showOnboarding: Bool = false
+    @Published var audioLevels: [Float] = []
+    @Published var detectedAppContext: String?
 
     // MARK: - Computed
 
@@ -53,6 +55,10 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.hasCompletedOnboarding) var hasCompletedOnboarding: Bool = false
     @AppStorage(StorageKey.fnDoubleTapInterval) var fnDoubleTapInterval: Double = 0.4
     @AppStorage(StorageKey.fastMode) var fastMode: Bool = false
+    @AppStorage(StorageKey.fillerWordRemoval) var fillerWordRemoval: Bool = true
+    @AppStorage(StorageKey.soundFeedback) var soundFeedback: Bool = true
+    @AppStorage(StorageKey.privacyMode) var privacyMode: Bool = false
+    @AppStorage(StorageKey.selectedLanguage) var selectedLanguage: String = "en"
 
     // MARK: - Computed Settings
 

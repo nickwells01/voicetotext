@@ -102,15 +102,38 @@ final class LLMPostProcessor {
         }
     }
 
+    // MARK: - Retry Logic
+
+    private func withRetry<T>(
+        maxAttempts: Int,
+        backoff: [TimeInterval],
+        operation: () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        for attempt in 0..<maxAttempts {
+            do {
+                return try await operation()
+            } catch {
+                lastError = error
+                let delay = attempt < backoff.count ? backoff[attempt] : backoff.last ?? 1.0
+                logger.warning("Attempt \(attempt + 1)/\(maxAttempts) failed: \(error.localizedDescription). Retrying in \(delay)s...")
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+        throw lastError!
+    }
+
     // MARK: - Remote Processing
 
     private func processRemote(rawText: String) async -> String {
         do {
-            let result = try await sendChatRequest(userMessage: rawText)
+            let result = try await withRetry(maxAttempts: 3, backoff: [0.5, 1.0, 2.0]) {
+                try await sendChatRequest(userMessage: rawText)
+            }
             logger.info("LLM processed text (\(rawText.count) -> \(result.count) chars)")
             return result
         } catch {
-            logger.error("LLM processing failed: \(error.localizedDescription). Returning raw text.")
+            logger.error("LLM processing failed after retries: \(error.localizedDescription). Returning raw text.")
             return rawText
         }
     }
@@ -131,7 +154,16 @@ final class LLMPostProcessor {
     private func processLocal(rawText: String) async -> String {
         let manager = await LocalLLMManager.shared
         await manager.resetSession(systemPrompt: config.systemPrompt)
-        return await manager.process(rawText: rawText)
+
+        // Single retry for local MLX
+        let result = await manager.process(rawText: rawText)
+        if result == rawText {
+            // First attempt returned raw text (failure), retry once
+            logger.info("Local LLM first attempt returned raw text, retrying once...")
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            return await manager.process(rawText: rawText)
+        }
+        return result
     }
 
     private func testLocal() async -> Bool {

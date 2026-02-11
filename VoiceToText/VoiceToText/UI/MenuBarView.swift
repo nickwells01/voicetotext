@@ -5,6 +5,8 @@ struct MenuBarView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var pipeline: TranscriptionPipeline
     @StateObject private var modelManager = ModelManager.shared
+    @State private var showingHistory = false
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -52,8 +54,15 @@ struct MenuBarView: View {
         HStack(spacing: 8) {
             statusDot
             VStack(alignment: .leading, spacing: 1) {
-                Text("VoiceToText")
-                    .font(.headline)
+                HStack(spacing: 4) {
+                    Text("VoiceToText")
+                        .font(.headline)
+                    if appState.privacyMode {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(statusColor)
@@ -135,6 +144,21 @@ struct MenuBarView: View {
                 }
             }
 
+            // Language picker
+            configControl(icon: "globe", label: "Language") {
+                Picker("", selection: $appState.selectedLanguage) {
+                    Text("English").tag("en")
+                    Text("Auto-Detect").tag("auto")
+                    Divider()
+                    ForEach(WhisperLanguage.allLanguages.filter { $0.code != "en" && $0.code != "auto" }, id: \.code) { lang in
+                        Text(lang.displayName).tag(lang.code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+            }
+
             // Activation mode picker
             configControl(icon: "keyboard", label: "Activation") {
                 Picker("", selection: $appState.activationMode) {
@@ -177,8 +201,31 @@ struct MenuBarView: View {
                 }
             }
 
-            // LLM model picker (when AI cleanup is enabled)
+            // AI Mode preset picker (when AI cleanup is enabled)
             if llmConfig.isEnabled {
+                configControl(icon: "wand.and.stars", label: "AI Mode") {
+                    Picker("", selection: Binding(
+                        get: { AIModePreset.activePreset()?.id.uuidString ?? "none" },
+                        set: { newValue in
+                            if newValue == "none" {
+                                AIModePreset.setActivePreset(nil)
+                            } else if let preset = AIModePreset.allPresets().first(where: { $0.id.uuidString == newValue }) {
+                                AIModePreset.setActivePreset(preset)
+                            }
+                        }
+                    )) {
+                        Text("Default").tag("none")
+                        Divider()
+                        ForEach(AIModePreset.allPresets()) { preset in
+                            Text(preset.name).tag(preset.id.uuidString)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+
+                // LLM model picker
                 if llmConfig.provider == .local {
                     configControl(icon: "brain", label: "LLM Model") {
                         Picker("", selection: $llmConfig.localModelId) {
@@ -289,6 +336,18 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+
+            Button {
+                showingHistory = true
+            } label: {
+                Label("History", systemImage: "clock")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .popover(isPresented: $showingHistory) {
+                HistoryView()
+            }
 
             Spacer()
 

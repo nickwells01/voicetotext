@@ -40,6 +40,15 @@ struct RecordingOverlayView: View {
             statusIndicator
             statusLabel
             Spacer(minLength: 0)
+
+            // Show detected app context if available
+            if let context = appState.detectedAppContext {
+                Text(context)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+
             cancelButton
         }
         .padding(.horizontal, 14)
@@ -53,14 +62,8 @@ struct RecordingOverlayView: View {
     private var statusIndicator: some View {
         switch appState.recordingState {
         case .recording:
-            Circle()
-                .fill(.red)
-                .frame(width: 12, height: 12)
-                .scaleEffect(isPulsing ? 1.2 : 0.8)
-                .opacity(isPulsing ? 1.0 : 0.6)
-                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
-                .onAppear { isPulsing = true }
-                .onDisappear { isPulsing = false }
+            AudioWaveformView(levels: appState.audioLevels)
+                .frame(width: 32, height: 16)
         case .transcribing:
             ProgressView()
                 .controlSize(.small)
@@ -202,5 +205,34 @@ struct RecordingOverlayView: View {
             totalHeight += 1 + 28 // divider + toast bar
         }
         RecordingOverlayWindow.shared.updateHeight(totalHeight)
+    }
+}
+
+// MARK: - Audio Waveform View
+
+struct AudioWaveformView: View {
+    let levels: [Float]
+    private let barCount = 12
+
+    var body: some View {
+        HStack(spacing: 1.5) {
+            ForEach(0..<barCount, id: \.self) { index in
+                let level = barLevel(at: index)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(level > 0.02 ? Color.red : Color.red.opacity(0.3))
+                    .frame(width: 2, height: max(2, CGFloat(level) * 16))
+                    .animation(.easeOut(duration: 0.1), value: level)
+            }
+        }
+    }
+
+    private func barLevel(at index: Int) -> Float {
+        guard !levels.isEmpty else { return 0 }
+        // Map bar index to the nearest sample in the levels array
+        let ratio = Float(index) / Float(max(barCount - 1, 1))
+        let sampleIndex = Int(ratio * Float(levels.count - 1))
+        let clampedIndex = min(max(sampleIndex, 0), levels.count - 1)
+        // Scale for visibility (RMS values are typically 0-0.1)
+        return min(levels[clampedIndex] * 10, 1.0)
     }
 }

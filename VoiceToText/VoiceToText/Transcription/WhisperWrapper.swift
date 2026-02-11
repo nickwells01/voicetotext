@@ -81,6 +81,64 @@ class WhisperParams {
 enum WhisperLanguage: String {
     case auto = "auto"
     case english = "en"
+    case spanish = "es"
+    case french = "fr"
+    case german = "de"
+    case chinese = "zh"
+    case japanese = "ja"
+    case korean = "ko"
+    case portuguese = "pt"
+    case italian = "it"
+    case dutch = "nl"
+    case russian = "ru"
+    case arabic = "ar"
+    case hindi = "hi"
+    case turkish = "tr"
+    case polish = "pl"
+    case swedish = "sv"
+    case danish = "da"
+    case norwegian = "no"
+    case finnish = "fi"
+    case czech = "cs"
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto-Detect"
+        case .english: return "English"
+        case .spanish: return "Spanish"
+        case .french: return "French"
+        case .german: return "German"
+        case .chinese: return "Chinese"
+        case .japanese: return "Japanese"
+        case .korean: return "Korean"
+        case .portuguese: return "Portuguese"
+        case .italian: return "Italian"
+        case .dutch: return "Dutch"
+        case .russian: return "Russian"
+        case .arabic: return "Arabic"
+        case .hindi: return "Hindi"
+        case .turkish: return "Turkish"
+        case .polish: return "Polish"
+        case .swedish: return "Swedish"
+        case .danish: return "Danish"
+        case .norwegian: return "Norwegian"
+        case .finnish: return "Finnish"
+        case .czech: return "Czech"
+        }
+    }
+
+    var code: String { rawValue }
+
+    static let allLanguages: [WhisperLanguage] = [
+        .english, .auto,
+        .spanish, .french, .german, .chinese, .japanese, .korean,
+        .portuguese, .italian, .dutch, .russian, .arabic, .hindi,
+        .turkish, .polish, .swedish, .danish, .norwegian, .finnish, .czech
+    ]
+
+    static func from(code: String) -> WhisperLanguage {
+        WhisperLanguage(rawValue: code) ?? .english
+    }
 }
 
 // MARK: - WhisperError

@@ -37,7 +37,9 @@ actor WhisperManager {
 
     // MARK: - Model Loading
 
-    func loadModel(url: URL) async throws {
+    private var currentLanguage: WhisperLanguage = .english
+
+    func loadModel(url: URL, language: WhisperLanguage = .english) async throws {
         logger.info("Loading Whisper model from \(url.lastPathComponent)")
 
         if whisper != nil {
@@ -45,11 +47,14 @@ actor WhisperManager {
             whisper = nil
         }
 
+        self.currentLanguage = language
+
         // Model loading is synchronous in SwiftWhisper, so run on a detached task
         // to avoid blocking the actor or the caller's executor.
+        let lang = language
         let loadedWhisper = await Task.detached(priority: .userInitiated) {
             let params = WhisperParams(strategy: .greedy)
-            params.language = .english
+            params.language = lang
 
             // Use all available cores for maximum speed
             params.n_threads = Int32(ProcessInfo.processInfo.activeProcessorCount)

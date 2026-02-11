@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import os
+import AVFoundation
 
 @MainActor
 final class TranscriptionPipeline: ObservableObject {
@@ -10,34 +11,32 @@ final class TranscriptionPipeline: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let audioRecorder = AudioRecorder()
     private let whisperManager = WhisperManager()
-    private let clipboardPaster = ClipboardPaster()
-
     private let modelManager = ModelManager.shared
     private let appState = AppState.shared
     private let hotKeyManager = HotKeyManager()
 
+    // MARK: - Extracted Components
+
+    private let recordingSession = RecordingSession()
+    private let burstScheduler = LLMBurstScheduler()
+    private let pasteCoordinator = PasteCoordinator()
+
     // MARK: - Pipeline Components
 
-    private let config = PipelineConfig()
+    private var config = PipelineConfig.load()
     private let stabilizer = TranscriptStabilizer()
     private let silenceDetector = SilenceDetector()
-    private var ringBuffer: AudioRingBuffer?
+    private let fillerWordFilter = FillerWordFilter()
 
     // MARK: - Tick Loop State
 
-    private var tickTimer: Timer?
     private var isDecoding = false
     private var needsRedecode = false
 
-    // MARK: - Focus Tracking
+    // MARK: - LLM Config Cache
 
-    private var frontmostApp: NSRunningApplication?
-
-    // MARK: - LLM Burst State
-
-    private var lastLLMCleanCharCount = 0
+    private var cachedLLMConfig: LLMConfig?
 
     // MARK: - State
 
@@ -91,8 +90,9 @@ final class TranscriptionPipeline: ObservableObject {
         }
 
         let modelURL = modelManager.activeModelFileURL(for: model, fastMode: appState.fastMode)
+        let language = WhisperLanguage.from(code: appState.selectedLanguage)
         do {
-            try await whisperManager.loadModel(url: modelURL)
+            try await whisperManager.loadModel(url: modelURL, language: language)
             isModelReady = true
             logger.info("Model \(model.id) loaded and ready")
         } catch {
@@ -110,33 +110,36 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        // Record frontmost app for paste focus restoration
-        frontmostApp = clipboardPaster.recordFrontmostApp()
-
         // Reset pipeline state
         stabilizer.reset()
         silenceDetector.reset()
+        burstScheduler.reset()
         isDecoding = false
         needsRedecode = false
-        lastLLMCleanCharCount = 0
+        var llmConfig = LLMConfig.load()
+        // Enforce privacy mode: force local provider when privacy mode is on
+        if appState.privacyMode && llmConfig.provider == .remote {
+            llmConfig.provider = .local
+        }
+        cachedLLMConfig = llmConfig
+
+        // Detect and show app context
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let context = AppContextDetector.detect(bundleIdentifier: frontmost?.bundleIdentifier)
+        if context != .general {
+            appState.detectedAppContext = context.displayName
+        } else {
+            appState.detectedAppContext = nil
+        }
+
         appState.resetStreamingText()
 
-        // Create ring buffer for this session
-        let buffer = AudioRingBuffer(capacity: config.windowSamples, sampleRate: config.sampleRate)
-        ringBuffer = buffer
-
         do {
-            try audioRecorder.startCapture(ringBuffer: buffer)
+            recordingSession.onTick = { [weak self] in self?.tick() }
+            try recordingSession.start(config: config, clipboardPaster: ClipboardPaster())
             appState.transitionTo(.recording)
             RecordingOverlayWindow.shared.show()
-
-            // Start tick timer
-            tickTimer = Timer.scheduledTimer(withTimeInterval: config.tickInterval, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.tick()
-                }
-            }
-
+            playStartSound()
             logger.info("Recording started (sliding window mode, tick: \(self.config.tickMs)ms, window: \(self.config.windowMs)ms)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
@@ -150,14 +153,9 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        // Stop tick timer
-        tickTimer?.invalidate()
-        tickTimer = nil
+        recordingSession.stop()
+        playStopSound()
 
-        // Stop audio capture
-        audioRecorder.stopCapture()
-
-        // Begin finalization
         Task {
             await finalizeRecording()
         }
@@ -165,16 +163,15 @@ final class TranscriptionPipeline: ObservableObject {
 
     func cancelRecording() {
         if appState.recordingState == .recording {
-            tickTimer?.invalidate()
-            tickTimer = nil
-            audioRecorder.stopCapture()
+            recordingSession.stop()
         }
         isDecoding = false
         needsRedecode = false
         stabilizer.reset()
         silenceDetector.reset()
-        ringBuffer = nil
-        frontmostApp = nil
+        burstScheduler.reset()
+        recordingSession.cleanup()
+        cachedLLMConfig = nil
         appState.resetStreamingText()
         appState.transitionTo(.idle)
         RecordingOverlayWindow.shared.hide()
@@ -190,13 +187,22 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        guard let window = audioRecorder.getLatestWindow(),
+        guard let window = recordingSession.audioRecorder.getLatestWindow(),
               !window.pcm.isEmpty else {
             return
         }
 
-        // Check for silence
-        if silenceDetector.update(samples: window.pcm, currentAbsMs: window.windowEndAbsMs) {
+        // Check for silence and update audio levels
+        let isSilent = silenceDetector.update(samples: window.pcm, currentAbsMs: window.windowEndAbsMs)
+
+        // Update waveform visualization (rolling buffer of recent RMS levels)
+        let maxLevels = 30
+        appState.audioLevels.append(silenceDetector.lastRMS)
+        if appState.audioLevels.count > maxLevels {
+            appState.audioLevels.removeFirst(appState.audioLevels.count - maxLevels)
+        }
+
+        if isSilent {
             return  // Silence detected, skip decode to save resources
         }
 
@@ -240,7 +246,13 @@ final class TranscriptionPipeline: ObservableObject {
                         self.tick()
                     }
 
-                    self.maybeRunLLMBurstClean()
+                    self.burstScheduler.maybeRunBurstClean(
+                        committedText: self.stabilizer.state.rawCommitted,
+                        llmConfig: self.cachedLLMConfig
+                    ) { [weak self] cleaned in
+                        self?.stabilizer.state.cleanedCommitted = cleaned
+                        self?.updateUIFromStabilizer()
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -255,31 +267,17 @@ final class TranscriptionPipeline: ObservableObject {
 
     private func updateUIFromStabilizer() {
         let state = stabilizer.state
-        appState.committedText = state.cleanedCommitted ?? state.rawCommitted
-        appState.speculativeText = state.rawSpeculative
-    }
+        var committed = state.cleanedCommitted ?? state.rawCommitted
+        var speculative = state.rawSpeculative
 
-    // MARK: - LLM Burst Cleaning
-
-    private func maybeRunLLMBurstClean() {
-        let llmConfig = LLMConfig.load()
-        guard llmConfig.isEnabled && llmConfig.isValid else { return }
-
-        let committed = stabilizer.state.rawCommitted
-        let newChars = committed.count - lastLLMCleanCharCount
-        guard newChars > 200 else { return }
-
-        lastLLMCleanCharCount = committed.count
-
-        // Clean only the new portion at sentence boundary
-        let postProcessor = LLMPostProcessor(config: llmConfig)
-        Task {
-            let cleaned = await postProcessor.processChunked(rawText: committed)
-            await MainActor.run {
-                self.stabilizer.state.cleanedCommitted = cleaned
-                self.updateUIFromStabilizer()
-            }
+        // Apply filler word removal if enabled
+        if appState.fillerWordRemoval {
+            committed = fillerWordFilter.filter(committed)
+            speculative = fillerWordFilter.filter(speculative)
         }
+
+        appState.committedText = committed
+        appState.speculativeText = speculative
     }
 
     // MARK: - Finalization
@@ -293,7 +291,7 @@ final class TranscriptionPipeline: ObservableObject {
         }
 
         // Final decode with full window, commit everything (margin=0)
-        if let window = ringBuffer?.getWindow(), !window.pcm.isEmpty {
+        if let window = recordingSession.ringBuffer?.getWindow(), !window.pcm.isEmpty {
             do {
                 let result = try await whisperManager.transcribeWindow(
                     frames: window.pcm,
@@ -314,7 +312,12 @@ final class TranscriptionPipeline: ObservableObject {
         stabilizer.finalizeAll()
         updateUIFromStabilizer()
 
-        let rawText = stabilizer.state.rawCommitted
+        var rawText = stabilizer.state.rawCommitted
+
+        // Apply filler word filter if enabled
+        if appState.fillerWordRemoval {
+            rawText = fillerWordFilter.filter(rawText)
+        }
 
         guard !rawText.isEmpty else {
             logger.info("Recording produced empty transcription")
@@ -324,39 +327,47 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        // Optional LLM post-processing
-        var finalText = rawText
-        let llmConfig = LLMConfig.load()
-
-        if llmConfig.isEnabled && llmConfig.isValid {
-            appState.transitionTo(.processing)
-            let postProcessor = LLMPostProcessor(config: llmConfig)
-            finalText = await postProcessor.processChunked(rawText: rawText)
-            logger.info("LLM processed: '\(rawText.prefix(40))' → '\(finalText.prefix(40))'")
-        }
-
-        // Paste via clipboard with focus tracking
-        appState.lastTranscription = finalText
-
         RecordingOverlayWindow.shared.hide()
 
-        // Brief settle time for window server
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        // Detect app context from frontmost app
+        let appContext = AppContextDetector.detect(
+            bundleIdentifier: recordingSession.frontmostApp?.bundleIdentifier
+        )
 
-        let pasteResult = await clipboardPaster.paste(text: finalText, targetApp: frontmostApp)
+        let finalText = await pasteCoordinator.finalize(
+            rawText: rawText,
+            llmConfig: cachedLLMConfig ?? LLMConfig.load(),
+            targetApp: recordingSession.frontmostApp,
+            appState: appState,
+            customVocabulary: CustomVocabulary.load(),
+            appContext: appContext,
+            activePreset: AIModePreset.activePreset()
+        )
 
-        switch pasteResult {
-        case .pasted:
-            break
-        case .copiedOnly(let reason):
-            appState.toastMessage = "Copied to clipboard (paste manually)"
-            logger.warning("Paste failed: \(reason). Text on clipboard.")
-            RecordingOverlayWindow.shared.showToast("Copied — paste with ⌘V")
-        }
+        // Save to history
+        TranscriptionHistoryStore.shared.addRecord(TranscriptionRecord(
+            rawText: stabilizer.state.rawCommitted,
+            processedText: finalText != rawText ? finalText : nil,
+            durationSeconds: appState.recordingDuration,
+            modelName: appState.selectedModelName,
+            language: appState.selectedLanguage
+        ))
 
         cleanup()
         appState.transitionTo(.idle)
         logger.info("Pipeline complete, final text: \(finalText.prefix(80))")
+    }
+
+    // MARK: - Sound Feedback
+
+    private func playStartSound() {
+        guard appState.soundFeedback else { return }
+        NSSound(named: .init("Tink"))?.play()
+    }
+
+    private func playStopSound() {
+        guard appState.soundFeedback else { return }
+        NSSound(named: .init("Pop"))?.play()
     }
 
     // MARK: - Cleanup
@@ -364,10 +375,10 @@ final class TranscriptionPipeline: ObservableObject {
     private func cleanup() {
         stabilizer.reset()
         silenceDetector.reset()
-        ringBuffer = nil
-        frontmostApp = nil
+        burstScheduler.reset()
+        recordingSession.cleanup()
         isDecoding = false
         needsRedecode = false
-        lastLLMCleanCharCount = 0
+        cachedLLMConfig = nil
     }
 }

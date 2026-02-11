@@ -78,11 +78,17 @@ final class TranscriptStabilizer {
 
         // Append new committed tokens
         if !newCommittedTexts.isEmpty {
-            let newText = newCommittedTexts.joined().trimmingCharacters(in: .whitespaces)
+            // Tokens carry their own leading spaces (e.g. " Hello", " world").
+            // Join without separator to preserve natural spacing.
+            let newText = newCommittedTexts.joined()
             if !newText.isEmpty {
                 let previousCommitted = state.rawCommitted
+                // Tokens typically have leading spaces; only add a space separator
+                // if the new text doesn't already start with whitespace.
                 if state.rawCommitted.isEmpty {
                     state.rawCommitted = newText
+                } else if newText.first?.isWhitespace == true {
+                    state.rawCommitted += newText
                 } else {
                     state.rawCommitted += " " + newText
                 }
@@ -95,7 +101,7 @@ final class TranscriptStabilizer {
         }
 
         // Replace speculative entirely
-        state.rawSpeculative = speculativeTexts.joined().trimmingCharacters(in: .whitespaces)
+        state.rawSpeculative = speculativeTexts.joined()
 
         // Normalize whitespace
         state.rawCommitted = normalizeWhitespace(state.rawCommitted)

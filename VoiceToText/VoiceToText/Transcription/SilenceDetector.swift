@@ -9,6 +9,9 @@ final class SilenceDetector {
     private let silenceDurationMs: Int
     private var silenceStartMs: Int?
 
+    /// Last computed RMS value, exposed for waveform visualization.
+    private(set) var lastRMS: Float = 0
+
     init(energyThreshold: Float = 0.01, silenceDurationMs: Int = 900) {
         self.energyThreshold = energyThreshold
         self.silenceDurationMs = silenceDurationMs
@@ -20,6 +23,7 @@ final class SilenceDetector {
         guard !samples.isEmpty else { return false }
 
         let rms = computeRMS(samples)
+        lastRMS = rms
 
         if rms < energyThreshold {
             if silenceStartMs == nil {
@@ -37,6 +41,7 @@ final class SilenceDetector {
 
     func reset() {
         silenceStartMs = nil
+        lastRMS = 0
     }
 
     // MARK: - Internal

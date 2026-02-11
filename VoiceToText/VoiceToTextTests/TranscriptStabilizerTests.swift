@@ -186,4 +186,41 @@ final class TranscriptStabilizerTests: XCTestCase {
         XCTAssertTrue(stabilizer.state.rawSpeculative.isEmpty)
         XCTAssertEqual(stabilizer.state.committedEndAbsMs, 0)
     }
+
+    // MARK: - Token Spacing
+
+    func testTokenLeadingSpacesPreserved() {
+        let stabilizer = TranscriptStabilizer()
+
+        // Whisper tokens typically have leading spaces like " I", " am"
+        let tokens = [
+            makeToken(" I", startMs: 0, endMs: 100),
+            makeToken(" am", startMs: 100, endMs: 200),
+            makeToken(" happy", startMs: 200, endMs: 300),
+        ]
+        let seg = makeSegment(" I am happy", startMs: 0, endMs: 300, tokens: tokens)
+        let result = makeResult(segments: [seg], windowStartAbsMs: 0)
+        let state = stabilizer.update(decodeResult: result, windowEndAbsMs: 1000, commitMarginMs: 0)
+
+        // Should be "I am happy", not "Iamhappy"
+        XCTAssertEqual(state.rawCommitted, "I am happy")
+    }
+
+    func testSpeculativeTokenSpacingPreserved() {
+        let stabilizer = TranscriptStabilizer()
+
+        let tokens = [
+            makeToken(" Hello", startMs: 0, endMs: 200),
+            makeToken(" there", startMs: 200, endMs: 500),
+            makeToken(" friend", startMs: 500, endMs: 800),
+        ]
+        let seg = makeSegment(" Hello there friend", startMs: 0, endMs: 800, tokens: tokens)
+        let result = makeResult(segments: [seg], windowStartAbsMs: 0)
+
+        // Large margin so everything is speculative
+        let state = stabilizer.update(decodeResult: result, windowEndAbsMs: 800, commitMarginMs: 1000)
+
+        // Speculative should have proper spacing
+        XCTAssertEqual(state.rawSpeculative, "Hello there friend")
+    }
 }

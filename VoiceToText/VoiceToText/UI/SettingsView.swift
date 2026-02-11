@@ -19,8 +19,18 @@ struct SettingsView: View {
                 .tabItem {
                     Label("AI Cleanup", systemImage: "sparkles")
                 }
+
+            AdvancedTab()
+                .tabItem {
+                    Label("Advanced", systemImage: "slider.horizontal.3")
+                }
+
+            AboutTab()
+                .tabItem {
+                    Label("About", systemImage: "info.circle")
+                }
         }
-        .frame(width: 480, height: 500)
+        .frame(width: 500, height: 540)
     }
 }
 
@@ -57,12 +67,40 @@ private struct GeneralTab: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if appState.currentTriggerMethod == .fnDoubleTap {
+                    HStack {
+                        Text("Double-Tap Speed")
+                        Slider(value: $appState.fnDoubleTapInterval, in: 0.2...0.8, step: 0.05) {
+                            Text("Interval")
+                        }
+                        Text("\(Int(appState.fnDoubleTapInterval * 1000))ms")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                }
+
                 if appState.currentTriggerMethod == .keyboardShortcut {
                     HStack {
                         Text("Keyboard Shortcut")
                         Spacer()
                         KeyboardShortcuts.Recorder(for: .toggleRecording)
                     }
+                }
+            }
+
+            Section("Transcription") {
+                Toggle("Remove Filler Words (um, uh, like...)", isOn: $appState.fillerWordRemoval)
+                Toggle("Sound Feedback on Start/Stop", isOn: $appState.soundFeedback)
+            }
+
+            Section("Privacy") {
+                Toggle("Privacy Mode (All-Local Processing)", isOn: $appState.privacyMode)
+                if appState.privacyMode {
+                    Text("All transcription and AI processing stays on your Mac. No data is sent to external servers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -478,7 +516,6 @@ private struct AICleanupTab: View {
 
     private func loadLocalModelIfNeeded() {
         guard config.isEnabled, config.provider == .local, !config.localModelId.isEmpty else { return }
-        // If the selected model differs from the loaded one, load it
         if localLLM.currentModelId != config.localModelId || !localLLM.state.isReady {
             Task {
                 await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
@@ -495,5 +532,148 @@ private struct AICleanupTab: View {
             let success = await processor.testConnection()
             testResult = success ? .success : .failure
         }
+    }
+}
+
+// MARK: - Advanced Tab
+
+private struct AdvancedTab: View {
+    @State private var pipelineConfig = PipelineConfig.load()
+
+    var body: some View {
+        Form {
+            Section("Pipeline Tuning") {
+                Text("These settings control the real-time transcription pipeline. Default values work well for most hardware.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Text("Audio Window")
+                    Slider(value: windowMsBinding, in: 4000...12000, step: 1000) {
+                        Text("Window")
+                    }
+                    Text("\(pipelineConfig.windowMs / 1000)s")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, alignment: .trailing)
+                }
+
+                HStack {
+                    Text("Commit Margin")
+                    Slider(value: commitMarginBinding, in: 400...1200, step: 50) {
+                        Text("Margin")
+                    }
+                    Text("\(pipelineConfig.commitMarginMs)ms")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, alignment: .trailing)
+                }
+
+                HStack {
+                    Text("Tick Interval")
+                    Slider(value: tickMsBinding, in: 150...500, step: 50) {
+                        Text("Tick")
+                    }
+                    Text("\(pipelineConfig.tickMs)ms")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, alignment: .trailing)
+                }
+
+                HStack {
+                    Text("Silence Timeout")
+                    Slider(value: silenceMsBinding, in: 500...2000, step: 100) {
+                        Text("Silence")
+                    }
+                    Text("\(pipelineConfig.silenceMs)ms")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 48, alignment: .trailing)
+                }
+            }
+
+            Section {
+                Button("Reset to Defaults") {
+                    pipelineConfig = PipelineConfig()
+                    pipelineConfig.save()
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    // Bindings that save on change
+    private var windowMsBinding: Binding<Double> {
+        Binding(
+            get: { Double(pipelineConfig.windowMs) },
+            set: { pipelineConfig.windowMs = Int($0); pipelineConfig.save() }
+        )
+    }
+
+    private var commitMarginBinding: Binding<Double> {
+        Binding(
+            get: { Double(pipelineConfig.commitMarginMs) },
+            set: { pipelineConfig.commitMarginMs = Int($0); pipelineConfig.save() }
+        )
+    }
+
+    private var tickMsBinding: Binding<Double> {
+        Binding(
+            get: { Double(pipelineConfig.tickMs) },
+            set: { pipelineConfig.tickMs = Int($0); pipelineConfig.save() }
+        )
+    }
+
+    private var silenceMsBinding: Binding<Double> {
+        Binding(
+            get: { Double(pipelineConfig.silenceMs) },
+            set: { pipelineConfig.silenceMs = Int($0); pipelineConfig.save() }
+        )
+    }
+}
+
+// MARK: - About Tab
+
+private struct AboutTab: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "mic.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.accentColor)
+
+            Text("VoiceToText")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Text("On-device speech-to-text for macOS")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            Text("Version 1.0")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+
+            Divider()
+                .frame(width: 200)
+
+            VStack(spacing: 6) {
+                Label("Powered by whisper.cpp", systemImage: "waveform")
+                Label("AI cleanup via MLX Swift", systemImage: "brain")
+                Label("100% offline capable", systemImage: "lock.shield")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
     }
 }
