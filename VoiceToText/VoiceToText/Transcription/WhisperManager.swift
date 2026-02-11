@@ -220,6 +220,48 @@ actor WhisperManager {
         return DecodeResult(segments: segments, windowStartAbsMs: windowStartAbsMs)
     }
 
+    // MARK: - Full Audio Decode (Finalization)
+
+    /// Perform a single authoritative decode of the full recording audio.
+    /// Unlike `transcribeWindow`, this allows multi-segment output (no `single_segment`)
+    /// and skips token-level timestamps, letting Whisper.cpp handle long audio naturally.
+    func transcribeFull(frames: [Float]) async throws -> String {
+        guard let whisper else {
+            throw WhisperManagerError.modelNotLoaded
+        }
+        guard !frames.isEmpty else { return "" }
+
+        // Temporarily allow multi-segment output for full audio
+        let savedSingleSegment = whisper.params.single_segment
+        whisper.params.single_segment = false
+        whisper.params.token_timestamps = false
+        whisper.params.initial_prompt = nil
+
+        defer {
+            whisper.params.single_segment = savedSingleSegment
+            whisper.params.token_timestamps = false
+        }
+
+        let audioDuration = Double(frames.count) / 16000.0
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let segments: [Segment]
+        do {
+            segments = try await whisper.transcribe(audioFrames: frames)
+        } catch {
+            logger.error("Full-audio transcription failed: \(error.localizedDescription)")
+            throw WhisperManagerError.transcriptionFailed(error.localizedDescription)
+        }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        let raw = segments.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = raw.replacingOccurrences(of: "\\.{2,}", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        logger.info("Full-audio decode: \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio → \(text.count) chars")
+        return text
+    }
+
     // MARK: - Cleanup
 
     func unloadModel() {

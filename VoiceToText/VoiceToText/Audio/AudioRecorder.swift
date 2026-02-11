@@ -47,9 +47,19 @@ final class AudioRecorder {
 
     private var ringBuffer: AudioRingBuffer?
 
+    /// Growing buffer that accumulates ALL audio samples for the session.
+    /// Used by the final decode to produce an authoritative transcription
+    /// (the ring buffer only retains the most recent window).
+    private var fullAudioSamples: [Float] = []
+
     /// Total samples recorded in this session.
     var totalSamplesRecorded: Int {
         ringBuffer?.totalSamplesWritten ?? 0
+    }
+
+    /// Returns all audio samples recorded in this session.
+    func getFullAudio() -> [Float] {
+        return fullAudioSamples
     }
 
     // MARK: - Start Capture
@@ -61,6 +71,7 @@ final class AudioRecorder {
         }
 
         self.ringBuffer = ringBuffer
+        self.fullAudioSamples = []
 
         let inputNode = audioEngine.inputNode
 
@@ -169,6 +180,7 @@ final class AudioRecorder {
 
         Task { @MainActor [weak self] in
             self?.ringBuffer?.append(samples: samples)
+            self?.fullAudioSamples.append(contentsOf: samples)
         }
     }
 }

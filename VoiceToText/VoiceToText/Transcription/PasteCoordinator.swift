@@ -18,7 +18,8 @@ final class PasteCoordinator {
         appState: AppState,
         customVocabulary: CustomVocabulary? = nil,
         appContext: AppCategory? = nil,
-        activePreset: AIModePreset? = nil
+        activePreset: AIModePreset? = nil,
+        preferDirectInsertion: Bool = true
     ) async -> String {
         guard !rawText.isEmpty else {
             logger.info("Empty transcription, nothing to paste")
@@ -49,7 +50,7 @@ final class PasteCoordinator {
             }
 
             let postProcessor = LLMPostProcessor(config: llmConfig)
-            finalText = await postProcessor.processChunked(rawText: rawText)
+            finalText = await postProcessor.process(rawText: rawText)
             logger.info("LLM processed: '\(rawText.prefix(40))' → '\(finalText.prefix(40))'")
         }
 
@@ -60,13 +61,15 @@ final class PasteCoordinator {
         try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
         // Try direct text insertion first (preserves clipboard)
-        let insertResult = directInserter.insert(text: finalText)
-        switch insertResult {
-        case .inserted:
-            logger.info("Direct text insertion succeeded")
-            return finalText
-        case .notSupported(let reason):
-            logger.info("Direct insertion not available (\(reason)), falling back to clipboard paste")
+        if preferDirectInsertion {
+            let insertResult = directInserter.insert(text: finalText)
+            switch insertResult {
+            case .inserted:
+                logger.info("Direct text insertion succeeded")
+                return finalText
+            case .notSupported(let reason):
+                logger.info("Direct insertion not available (\(reason)), falling back to clipboard paste")
+            }
         }
 
         // Fall back to clipboard paste

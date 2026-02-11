@@ -61,17 +61,28 @@ final class TranscriptStabilizer {
             }
         }
 
-        // Partition into committed and speculative
+        // Partition into committed and speculative.
+        // A token is "new committed" if it ends before the commit horizon and doesn't
+        // fully overlap with already-committed audio. Tokens that partially overlap
+        // (start slightly before committedEndAbsMs) are still accepted to avoid
+        // dropping words during sliding-window re-decoding.
         var newCommittedTexts: [String] = []
         var speculativeTexts: [String] = []
 
         for token in allTokens {
-            if token.absEndMs <= commitHorizonAbsMs && token.absStartMs >= state.committedEndAbsMs {
+            // Skip tokens that are entirely within the already-committed region
+            if token.absEndMs <= state.committedEndAbsMs {
+                continue
+            }
+
+            if token.absEndMs <= commitHorizonAbsMs {
+                // Token ends before the commit horizon — commit it.
+                // Accept tokens that partially overlap with the committed region
+                // (absStartMs < committedEndAbsMs) to avoid gaps from re-decoding.
                 newCommittedTexts.append(token.text)
-                if token.absEndMs > state.committedEndAbsMs {
-                    state.committedEndAbsMs = token.absEndMs
-                }
-            } else if token.absEndMs > commitHorizonAbsMs {
+                state.committedEndAbsMs = token.absEndMs
+            } else {
+                // Token extends past the commit horizon — keep speculative
                 speculativeTexts.append(token.text)
             }
         }

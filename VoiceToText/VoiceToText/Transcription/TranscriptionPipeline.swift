@@ -123,11 +123,15 @@ final class TranscriptionPipeline: ObservableObject {
         }
         cachedLLMConfig = llmConfig
 
-        // Detect and show app context
-        let frontmost = NSWorkspace.shared.frontmostApplication
-        let context = AppContextDetector.detect(bundleIdentifier: frontmost?.bundleIdentifier)
-        if context != .general {
-            appState.detectedAppContext = context.displayName
+        // Detect and show app context (if enabled)
+        if appState.appContextEnabled {
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            let context = AppContextDetector.detect(bundleIdentifier: frontmost?.bundleIdentifier)
+            if context != .general {
+                appState.detectedAppContext = context.displayName
+            } else {
+                appState.detectedAppContext = nil
+            }
         } else {
             appState.detectedAppContext = nil
         }
@@ -208,16 +212,7 @@ final class TranscriptionPipeline: ObservableObject {
 
         isDecoding = true
 
-        // Build prompt from committed text
-        let committed = stabilizer.state.rawCommitted
-        let prompt: String?
-        if committed.isEmpty {
-            prompt = nil
-        } else if committed.count <= config.maxPromptChars {
-            prompt = committed
-        } else {
-            prompt = String(committed.suffix(config.maxPromptChars))
-        }
+        let prompt = buildPrompt(from: stabilizer.state.rawCommitted)
 
         let windowStartAbsMs = window.windowStartAbsMs
         let windowEndAbsMs = window.windowEndAbsMs
@@ -290,25 +285,51 @@ final class TranscriptionPipeline: ObservableObject {
             try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         }
 
-        // Final decode with full window, commit everything (margin=0)
-        if let window = recordingSession.ringBuffer?.getWindow(), !window.pcm.isEmpty {
+        // Wait for any in-flight burst LLM clean to complete so it doesn't
+        // race with the final LLM processing below
+        while burstScheduler.isRunning {
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
+
+        // Clear stale burst-cleaned text — final processing will re-clean the complete text
+        stabilizer.state.cleanedCommitted = nil
+
+        // Perform an authoritative decode of ALL recorded audio.
+        // The incremental stabilizer can lose words when Whisper produces different
+        // tokenizations across sliding window boundaries. A single decode of the
+        // full audio avoids this entirely.
+        let fullAudio = recordingSession.audioRecorder.getFullAudio()
+        if !fullAudio.isEmpty {
             do {
-                let result = try await whisperManager.transcribeWindow(
-                    frames: window.pcm,
-                    windowStartAbsMs: window.windowStartAbsMs,
-                    prompt: stabilizer.state.rawCommitted.isEmpty ? nil : String(stabilizer.state.rawCommitted.suffix(config.maxPromptChars))
-                )
-                stabilizer.update(
-                    decodeResult: result,
-                    windowEndAbsMs: window.windowEndAbsMs,
-                    commitMarginMs: 0  // Commit everything
-                )
+                let freshTranscription = try await whisperManager.transcribeFull(frames: fullAudio)
+                if !freshTranscription.isEmpty {
+                    stabilizer.reset()
+                    stabilizer.state.rawCommitted = freshTranscription
+                    logger.info("Full-audio decode: \(freshTranscription.count) chars")
+                }
             } catch {
-                logger.error("Final decode failed: \(error.localizedDescription)")
+                logger.error("Full-audio decode failed, falling back to stabilizer: \(error.localizedDescription)")
+                // Fall back to ring buffer decode + stabilizer
+                if let window = recordingSession.ringBuffer?.getWindow(), !window.pcm.isEmpty {
+                    do {
+                        let result = try await whisperManager.transcribeWindow(
+                            frames: window.pcm,
+                            windowStartAbsMs: window.windowStartAbsMs,
+                            prompt: buildPrompt(from: stabilizer.state.rawCommitted)
+                        )
+                        stabilizer.update(
+                            decodeResult: result,
+                            windowEndAbsMs: window.windowEndAbsMs,
+                            commitMarginMs: 0
+                        )
+                    } catch {
+                        logger.error("Ring buffer fallback decode also failed: \(error.localizedDescription)")
+                    }
+                }
             }
         }
 
-        // Finalize all speculative text as committed
+        // Finalize any remaining speculative text
         stabilizer.finalizeAll()
         updateUIFromStabilizer()
 
@@ -329,10 +350,10 @@ final class TranscriptionPipeline: ObservableObject {
 
         RecordingOverlayWindow.shared.hide()
 
-        // Detect app context from frontmost app
-        let appContext = AppContextDetector.detect(
-            bundleIdentifier: recordingSession.frontmostApp?.bundleIdentifier
-        )
+        // Detect app context from frontmost app (if enabled)
+        let appContext: AppCategory = appState.appContextEnabled
+            ? AppContextDetector.detect(bundleIdentifier: recordingSession.frontmostApp?.bundleIdentifier)
+            : .general
 
         let finalText = await pasteCoordinator.finalize(
             rawText: rawText,
@@ -341,7 +362,8 @@ final class TranscriptionPipeline: ObservableObject {
             appState: appState,
             customVocabulary: CustomVocabulary.load(),
             appContext: appContext,
-            activePreset: AIModePreset.activePreset()
+            activePreset: AIModePreset.activePreset(),
+            preferDirectInsertion: appState.preferDirectInsertion
         )
 
         // Save to history
@@ -368,6 +390,26 @@ final class TranscriptionPipeline: ObservableObject {
     private func playStopSound() {
         guard appState.soundFeedback else { return }
         NSSound(named: .init("Pop"))?.play()
+    }
+
+    // MARK: - Prompt Building
+
+    /// Build a Whisper prompt from committed text, truncating at a sentence
+    /// boundary so the model gets coherent context rather than a fragment.
+    private func buildPrompt(from committed: String) -> String? {
+        guard !committed.isEmpty else { return nil }
+        guard committed.count > config.maxPromptChars else { return committed }
+
+        let suffix = String(committed.suffix(config.maxPromptChars))
+        // Trim to the nearest sentence boundary
+        if let dotRange = suffix.range(of: ". ", options: .literal) {
+            return String(suffix[dotRange.upperBound...])
+        }
+        // Fall back to a word boundary
+        if let spaceRange = suffix.range(of: " ", options: .literal) {
+            return String(suffix[spaceRange.upperBound...])
+        }
+        return suffix
     }
 
     // MARK: - Cleanup

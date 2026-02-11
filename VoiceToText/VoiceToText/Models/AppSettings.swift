@@ -20,6 +20,8 @@ enum StorageKey {
     static let customVocabulary = "customVocabulary"
     static let aiModePresets = "aiModePresets"
     static let activeAIModePresetId = "activeAIModePresetId"
+    static let appContextEnabled = "appContextEnabled"
+    static let preferDirectInsertion = "preferDirectInsertion"
 }
 
 // MARK: - Activation Mode

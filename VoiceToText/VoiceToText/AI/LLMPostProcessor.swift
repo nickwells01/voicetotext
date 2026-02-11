@@ -12,65 +12,6 @@ final class LLMPostProcessor {
         self.config = config
     }
 
-    // MARK: - Chunked Processing (Sentence-Level Burst)
-
-    /// Process text in sentence-level chunks for streaming burst cleaning.
-    /// Splits into groups of sentences, processes each independently, and joins results.
-    func processChunked(rawText: String) async -> String {
-        guard config.isValid else {
-            logger.warning("LLM config is not valid, returning raw text")
-            return rawText
-        }
-
-        let sentences = splitIntoSentences(rawText)
-        guard sentences.count > 1 else {
-            return await process(rawText: rawText)
-        }
-
-        // Group into chunks of 3-5 sentences
-        let chunkSize = min(5, max(3, sentences.count / 2))
-        var chunks: [String] = []
-        var current: [String] = []
-        for sentence in sentences {
-            current.append(sentence)
-            if current.count >= chunkSize {
-                chunks.append(current.joined(separator: " "))
-                current = []
-            }
-        }
-        if !current.isEmpty {
-            chunks.append(current.joined(separator: " "))
-        }
-
-        var results: [String] = []
-        for chunk in chunks {
-            let cleaned = await process(rawText: chunk)
-            results.append(cleaned)
-        }
-
-        return results.joined(separator: " ")
-    }
-
-    private func splitIntoSentences(_ text: String) -> [String] {
-        var sentences: [String] = []
-        var current = ""
-        for char in text {
-            current.append(char)
-            if char == "." || char == "!" || char == "?" {
-                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    sentences.append(trimmed)
-                }
-                current = ""
-            }
-        }
-        let remaining = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !remaining.isEmpty {
-            sentences.append(remaining)
-        }
-        return sentences
-    }
-
     // MARK: - Process Transcription
 
     /// Sends the raw transcription to the LLM for cleanup. Returns the original text on any failure.

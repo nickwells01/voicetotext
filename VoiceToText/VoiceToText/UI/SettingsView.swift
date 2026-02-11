@@ -30,7 +30,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 500, height: 540)
+        .frame(width: 500, height: 580)
     }
 }
 
@@ -91,8 +91,36 @@ private struct GeneralTab: View {
             }
 
             Section("Transcription") {
+                Picker("Language", selection: $appState.selectedLanguage) {
+                    Text("English").tag("en")
+                    Text("Auto-Detect").tag("auto")
+                    Divider()
+                    ForEach(WhisperLanguage.allLanguages.filter({ $0 != .english && $0 != .auto }), id: \.rawValue) { lang in
+                        Text(lang.displayName).tag(lang.rawValue)
+                    }
+                }
+                .onChange(of: appState.selectedLanguage) { _ in
+                    Task {
+                        await TranscriptionPipeline.shared.loadSelectedModel()
+                    }
+                }
+
+                if appState.selectedLanguage != "en" && appState.selectedLanguage != "auto",
+                   let model = appState.selectedModel, model.fileName.contains(".en") {
+                    Text("The selected model is English-only. Choose a multilingual model (XL Turbo, XXL) or switch language to English.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
                 Toggle("Remove Filler Words (um, uh, like...)", isOn: $appState.fillerWordRemoval)
                 Toggle("Sound Feedback on Start/Stop", isOn: $appState.soundFeedback)
+            }
+
+            Section("Output") {
+                Toggle("Direct Text Insertion (Accessibility API)", isOn: $appState.preferDirectInsertion)
+                Text("Insert text directly into the focused field. Falls back to clipboard paste if unavailable.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Privacy") {
@@ -309,12 +337,31 @@ private struct ModelRow: View {
 // MARK: - AI Cleanup Tab
 
 private struct AICleanupTab: View {
+    @EnvironmentObject private var appState: AppState
     @State private var config = LLMConfig.load()
     @State private var testResult: TestResult = .none
     @StateObject private var localLLM = LocalLLMManager.shared
 
+    // AI Mode Presets
+    @State private var selectedPresetId: UUID? = {
+        guard let idString = UserDefaults.standard.string(forKey: StorageKey.activeAIModePresetId),
+              let id = UUID(uuidString: idString) else { return nil }
+        return id
+    }()
+    @State private var customPresets: [AIModePreset] = AIModePreset.loadCustomPresets()
+    @State private var showingNewPreset = false
+    @State private var newPresetName = ""
+
+    // Custom Vocabulary
+    @State private var vocabulary = CustomVocabulary.load()
+    @State private var newWord = ""
+
     private enum TestResult {
         case none, testing, success, failure
+    }
+
+    private var allPresets: [AIModePreset] {
+        AIModePreset.builtInPresets + customPresets
     }
 
     var body: some View {
@@ -341,6 +388,13 @@ private struct AICleanupTab: View {
                         }
                     }
                 }
+
+                if config.isEnabled {
+                    Toggle("Context-Aware Prompts", isOn: $appState.appContextEnabled)
+                    Text("Adjusts AI prompts based on the active app (email, code editor, etc.)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if config.provider == .remote {
@@ -349,11 +403,91 @@ private struct AICleanupTab: View {
                 localSection
             }
 
+            if config.isEnabled {
+                Section("AI Mode") {
+                    HStack {
+                        Picker("Preset", selection: $selectedPresetId) {
+                            Text("Default").tag(nil as UUID?)
+                            Divider()
+                            ForEach(allPresets) { preset in
+                                Text(preset.name).tag(preset.id as UUID?)
+                            }
+                        }
+                        .onChange(of: selectedPresetId) { newId in
+                            if let id = newId, let preset = allPresets.first(where: { $0.id == id }) {
+                                config.systemPrompt = preset.systemPrompt
+                                config.save()
+                            }
+                            AIModePreset.setActivePreset(allPresets.first { $0.id == newId })
+                        }
+
+                        Button(action: { showingNewPreset = true }) {
+                            Image(systemName: "plus")
+                        }
+                        .help("Save current prompt as a new preset")
+
+                        Button(action: deleteSelectedPreset) {
+                            Image(systemName: "minus")
+                        }
+                        .disabled(selectedPresetId == nil || allPresets.first(where: { $0.id == selectedPresetId })?.isBuiltIn == true)
+                        .help("Delete selected custom preset")
+                    }
+
+                    if showingNewPreset {
+                        HStack {
+                            TextField("Preset name", text: $newPresetName)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Save") {
+                                saveNewPreset()
+                            }
+                            .disabled(newPresetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Button("Cancel") {
+                                showingNewPreset = false
+                                newPresetName = ""
+                            }
+                        }
+                    }
+                }
+            }
+
             Section("System Prompt") {
                 TextEditor(text: $config.systemPrompt)
                     .font(.system(.body, design: .monospaced))
                     .frame(height: 80)
                     .onChange(of: config.systemPrompt) { _ in config.save() }
+            }
+
+            if config.isEnabled {
+                Section("Custom Vocabulary") {
+                    Text("Words the AI should preserve exactly as spelled (product names, acronyms)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(vocabulary.words, id: \.self) { word in
+                        HStack {
+                            Text(word)
+                            Spacer()
+                            Button(role: .destructive) {
+                                vocabulary.words.removeAll { $0 == word }
+                                vocabulary.save()
+                            } label: {
+                                Image(systemName: "minus.circle")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    HStack {
+                        TextField("Add word...", text: $newWord)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { addVocabularyWord() }
+                        Button("Add") {
+                            addVocabularyWord()
+                        }
+                        .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
             }
 
             Section {
@@ -510,6 +644,39 @@ private struct AICleanupTab: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: - Preset Management
+
+    private func saveNewPreset() {
+        let name = newPresetName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let preset = AIModePreset(name: name, systemPrompt: config.systemPrompt)
+        customPresets.append(preset)
+        AIModePreset.saveCustomPresets(customPresets)
+        selectedPresetId = preset.id
+        AIModePreset.setActivePreset(preset)
+        showingNewPreset = false
+        newPresetName = ""
+    }
+
+    private func deleteSelectedPreset() {
+        guard let id = selectedPresetId,
+              let index = customPresets.firstIndex(where: { $0.id == id }) else { return }
+        customPresets.remove(at: index)
+        AIModePreset.saveCustomPresets(customPresets)
+        selectedPresetId = nil
+        AIModePreset.setActivePreset(nil)
+    }
+
+    // MARK: - Vocabulary Management
+
+    private func addVocabularyWord() {
+        let word = newWord.trimmingCharacters(in: .whitespaces)
+        guard !word.isEmpty, !vocabulary.words.contains(word) else { return }
+        vocabulary.words.append(word)
+        vocabulary.save()
+        newWord = ""
     }
 
     // MARK: - Load Local Model
