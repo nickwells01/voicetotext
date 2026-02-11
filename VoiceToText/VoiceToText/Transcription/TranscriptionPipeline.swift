@@ -11,7 +11,7 @@ final class TranscriptionPipeline: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let whisperManager = WhisperManager()
+    let whisperManager = WhisperManager()
     private let modelManager = ModelManager.shared
     private let appState = AppState.shared
     private let hotKeyManager = HotKeyManager()

@@ -46,6 +46,8 @@
 		B1A2C3D4E5F6001DB1A2C3D4 /* TranscriptionHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */; };
 		B1A2C3D4E5F6001EB1A2C3D4 /* DirectTextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */; };
 		B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */; };
+		C1A2B3D4E5F60011C1A2B3D4 /* TranscriptionTestHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */; };
+		C1A2B3D4E5F60012C1A2B3D4 /* TestHarnessMenuExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +86,8 @@
 		B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionHistoryStore.swift; sourceTree = "<group>"; };
 		B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectTextInserter.swift; sourceTree = "<group>"; };
 		B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTestHarness.swift; sourceTree = "<group>"; };
+		C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessMenuExtension.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +169,7 @@
 				6B6FABC4681B066EE10A36FE /* HotKey */,
 				64C94058819A6B0FD1595156 /* Models */,
 				3035C6B2C5C4D6FBADC8ED55 /* Permissions */,
+				C1A2B3D4E5F60020C1A2B3D4 /* TestHarness */,
 				2DF5A00D093D56EF722A5A51 /* Transcription */,
 				90BD7096970E75951593E879 /* UI */,
 			);
@@ -215,6 +220,15 @@
 				B1A2C3D4E5F6000EB1A2C3D4 /* DirectTextInserter.swift */,
 			);
 			path = Clipboard;
+			sourceTree = "<group>";
+		};
+		C1A2B3D4E5F60020C1A2B3D4 /* TestHarness */ = {
+			isa = PBXGroup;
+			children = (
+				C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */,
+				C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */,
+			);
+			path = TestHarness;
 			sourceTree = "<group>";
 		};
 		90BD7096970E75951593E879 /* UI */ = {
@@ -343,6 +357,8 @@
 				B1A2C3D4E5F6001DB1A2C3D4 /* TranscriptionHistoryStore.swift in Sources */,
 				B1A2C3D4E5F6001EB1A2C3D4 /* DirectTextInserter.swift in Sources */,
 				B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */,
+				C1A2B3D4E5F60011C1A2B3D4 /* TranscriptionTestHarness.swift in Sources */,
+				C1A2B3D4E5F60012C1A2B3D4 /* TestHarnessMenuExtension.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -26,10 +26,10 @@ struct RecordingOverlayView: View {
                 .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
         )
         .onChange(of: appState.committedText) { _, _ in
-            updateWindowHeight()
+            DispatchQueue.main.async { updateWindowHeight() }
         }
         .onChange(of: appState.speculativeText) { _, _ in
-            updateWindowHeight()
+            DispatchQueue.main.async { updateWindowHeight() }
         }
     }
 

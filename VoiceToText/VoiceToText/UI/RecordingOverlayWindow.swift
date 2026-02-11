@@ -8,6 +8,8 @@ final class RecordingOverlayWindow: NSPanel {
     private static let minHeight: CGFloat = 80
     private static let maxHeight: CGFloat = 300
 
+    private var isUpdatingHeight = false
+
     private init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: Self.defaultWidth, height: Self.minHeight),
@@ -29,6 +31,7 @@ final class RecordingOverlayWindow: NSPanel {
                 .environmentObject(AppState.shared)
                 .environmentObject(TranscriptionPipeline.shared)
         )
+        hostingView.sizingOptions = []
         hostingView.frame = NSRect(x: 0, y: 0, width: Self.defaultWidth, height: Self.minHeight)
         contentView = hostingView
 
@@ -45,13 +48,17 @@ final class RecordingOverlayWindow: NSPanel {
 
     @MainActor
     func updateHeight(_ newHeight: CGFloat) {
+        guard !isUpdatingHeight else { return }
+        isUpdatingHeight = true
+        defer { isUpdatingHeight = false }
+
         let clamped = min(max(newHeight, Self.minHeight), Self.maxHeight)
         let currentFrame = frame
         // Grow downward: keep top edge fixed
         let topY = currentFrame.origin.y + currentFrame.size.height
         let newOriginY = topY - clamped
         let newFrame = NSRect(x: currentFrame.origin.x, y: newOriginY, width: Self.defaultWidth, height: clamped)
-        setFrame(newFrame, display: true, animate: true)
+        setFrame(newFrame, display: true, animate: false)
     }
 
     @MainActor

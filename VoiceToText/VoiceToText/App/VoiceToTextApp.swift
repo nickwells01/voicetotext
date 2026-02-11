@@ -20,6 +20,18 @@ struct VoiceToTextApp: App {
                     if !appState.hasCompletedOnboarding {
                         openWindow(id: "onboarding")
                     }
+                    #if DEBUG
+                    if CommandLine.arguments.contains("--test-harness") {
+                        Task {
+                            // Wait for model to finish loading
+                            while !pipeline.isModelReady {
+                                try? await Task.sleep(nanoseconds: 200_000_000)
+                            }
+                            await pipeline.runTestHarness()
+                            NSApp.terminate(nil)
+                        }
+                    }
+                    #endif
                 }
         }
         .menuBarExtraStyle(.window)

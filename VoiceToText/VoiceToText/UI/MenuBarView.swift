@@ -342,6 +342,17 @@ struct MenuBarView: View {
                 HistoryView()
             }
 
+            #if DEBUG
+            Button {
+                Task { await pipeline.runTestHarness() }
+            } label: {
+                Label("Test", systemImage: "testtube.2")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            #endif
+
             Spacer()
 
             Button {
