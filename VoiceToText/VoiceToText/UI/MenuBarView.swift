@@ -176,6 +176,39 @@ struct MenuBarView: View {
                         }
                 }
             }
+
+            // LLM model picker (when AI cleanup is enabled)
+            if llmConfig.isEnabled {
+                if llmConfig.provider == .local {
+                    configControl(icon: "brain", label: "LLM Model") {
+                        Picker("", selection: $llmConfig.localModelId) {
+                            ForEach(LocalLLMModel.curatedModels) { model in
+                                Text(model.displayName).tag(model.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .onChange(of: llmConfig.localModelId) { _ in
+                            llmConfig.save()
+                            Task {
+                                await LocalLLMManager.shared.prepareModel(
+                                    modelId: llmConfig.localModelId,
+                                    systemPrompt: llmConfig.systemPrompt
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    configControl(icon: "brain", label: "LLM Model") {
+                        Text(llmConfig.modelName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
         }
     }
 
