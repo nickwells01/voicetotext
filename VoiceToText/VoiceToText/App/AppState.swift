@@ -32,6 +32,8 @@ final class AppState: ObservableObject {
     @Published var recordingState: RecordingState = .idle
     @Published var recordingDuration: TimeInterval = 0
     @Published var lastTranscription: String = ""
+    @Published var streamingText: String = ""
+    @Published var confirmedCharCount: Int = 0
     @Published var errorMessage: String?
     @Published var showOnboarding: Bool = false
 
@@ -76,6 +78,11 @@ final class AppState: ObservableObject {
         timerCancellable = nil
     }
 
+    func resetStreamingText() {
+        streamingText = ""
+        confirmedCharCount = 0
+    }
+
     // MARK: - State Transitions
 
     func transitionTo(_ state: RecordingState) {
@@ -88,6 +95,7 @@ final class AppState: ObservableObject {
             errorMessage = nil
         case .idle:
             stopRecordingTimer()
+            resetStreamingText()
         case .error(let message):
             stopRecordingTimer()
             errorMessage = message

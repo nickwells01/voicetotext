@@ -56,7 +56,7 @@ final class AudioRecorder {
     private var chunkTimer: Timer?
 
     /// Chunk interval in seconds
-    private static let chunkIntervalSeconds: Double = 3.0
+    var chunkIntervalSeconds: Double = 3.0
 
     /// Overlap in samples (200ms at 16kHz = 3200 samples)
     private static let overlapSamples: Int = Int(targetSampleRate * 0.2)
@@ -108,7 +108,7 @@ final class AudioRecorder {
 
         // Set up chunk emission timer if streaming is enabled
         if onChunkReady != nil {
-            chunkTimer = Timer.scheduledTimer(withTimeInterval: Self.chunkIntervalSeconds, repeats: true) { [weak self] _ in
+            chunkTimer = Timer.scheduledTimer(withTimeInterval: self.chunkIntervalSeconds, repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.emitChunk()
                 }

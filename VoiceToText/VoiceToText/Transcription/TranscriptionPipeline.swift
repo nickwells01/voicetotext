@@ -31,6 +31,11 @@ final class TranscriptionPipeline: ObservableObject {
     /// Task for in-flight chunk transcription
     private var chunkTranscriptionTask: Task<Void, Never>?
 
+    /// Joined streaming text built incrementally from chunks
+    private var joinedStreamText: String = ""
+    /// The raw text of the previous chunk (for overlap deduplication)
+    private var previousRawChunkText: String = ""
+
     // MARK: - App Lifecycle
 
     func setup() {
@@ -91,6 +96,23 @@ final class TranscriptionPipeline: ObservableObject {
         }
     }
 
+    // MARK: - Model-Based Chunk Interval
+
+    private func chunkInterval(for modelId: String) -> Double {
+        switch modelId {
+        case "tiny.en", "base.en":
+            return 1.0
+        case "small.en":
+            return 1.5
+        case "medium.en", "large-v3-turbo":
+            return 2.0
+        case "large-v3":
+            return 3.0
+        default:
+            return 3.0
+        }
+    }
+
     // MARK: - Recording Control
 
     func startRecording() {
@@ -103,6 +125,12 @@ final class TranscriptionPipeline: ObservableObject {
         chunkTexts = []
         lastChunkText = ""
         chunkTranscriptionTask = nil
+        joinedStreamText = ""
+        previousRawChunkText = ""
+        appState.resetStreamingText()
+
+        // Set model-based chunk interval
+        audioRecorder.chunkIntervalSeconds = chunkInterval(for: appState.selectedModelName)
 
         // Wire up chunk emission for streaming transcription
         audioRecorder.onChunkReady = { [weak self] chunk in
@@ -113,7 +141,7 @@ final class TranscriptionPipeline: ObservableObject {
             try audioRecorder.startCapture()
             appState.transitionTo(.recording)
             RecordingOverlayWindow.shared.show()
-            logger.info("Recording started (streaming mode)")
+            logger.info("Recording started (streaming mode, chunk interval: \(self.audioRecorder.chunkIntervalSeconds)s)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
             appState.transitionTo(.error(error.localizedDescription))
@@ -143,7 +171,10 @@ final class TranscriptionPipeline: ObservableObject {
         chunkTranscriptionTask = nil
         chunkTexts = []
         lastChunkText = ""
+        joinedStreamText = ""
+        previousRawChunkText = ""
         audioRecorder.onChunkReady = nil
+        appState.resetStreamingText()
         appState.transitionTo(.idle)
         RecordingOverlayWindow.shared.hide()
         logger.info("Recording cancelled")
@@ -151,7 +182,7 @@ final class TranscriptionPipeline: ObservableObject {
 
     // MARK: - Streaming Chunk Processing
 
-    /// Called during recording when a 3-second chunk is ready.
+    /// Called during recording when a chunk is ready.
     /// Each chunk's Task awaits the previous one so that:
     ///  1. `lastChunkText` is up-to-date when captured as decoder context
     ///  2. Only one `transcribeChunk` call is in-flight at a time, preventing
@@ -169,11 +200,61 @@ final class TranscriptionPipeline: ObservableObject {
                 guard !text.isEmpty else { return }
                 self.chunkTexts.append(text)
                 self.lastChunkText = text
+                self.updateStreamingText(newChunkText: text)
                 self.logger.info("Chunk \(self.chunkTexts.count) transcribed: \(text.prefix(60))")
             } catch {
                 self.logger.error("Chunk transcription failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Streaming Text Updates
+
+    /// Update the live streaming text shown in the overlay.
+    /// When a new chunk arrives, the previous chunk's contribution becomes "confirmed" (locked)
+    /// and only the new chunk's text is tentative.
+    private func updateStreamingText(newChunkText: String) {
+        if joinedStreamText.isEmpty {
+            joinedStreamText = newChunkText
+            appState.confirmedCharCount = 0
+        } else {
+            let deduped = deduplicateOverlap(previous: previousRawChunkText, current: newChunkText)
+            let prevLength = joinedStreamText.count
+            if !deduped.isEmpty {
+                joinedStreamText += " " + deduped
+            }
+            appState.confirmedCharCount = prevLength
+        }
+        appState.streamingText = joinedStreamText
+        previousRawChunkText = newChunkText
+    }
+
+    /// Remove overlapping leading words from `current` that match trailing words of `previous`.
+    /// The 200ms audio overlap between chunks can cause Whisper to repeat 1-2 words at boundaries.
+    private func deduplicateOverlap(previous: String, current: String) -> String {
+        guard !previous.isEmpty, !current.isEmpty else { return current }
+
+        let prevWords = previous.split(separator: " ")
+        let currWords = current.split(separator: " ")
+
+        guard !prevWords.isEmpty, !currWords.isEmpty else { return current }
+
+        let maxOverlap = min(2, min(prevWords.count, currWords.count))
+
+        for checkLen in (1...maxOverlap).reversed() {
+            let prevTail = prevWords.suffix(checkLen).map(String.init)
+            let currHead = currWords.prefix(checkLen).map(String.init)
+            if prevTail.map({ $0.lowercased() }) == currHead.map({ $0.lowercased() }) {
+                // Skip if all matched words are very short (likely coincidental)
+                let allShort = prevTail.allSatisfy { $0.count <= 2 }
+                if !allShort {
+                    let deduplicated = currWords.dropFirst(checkLen).joined(separator: " ")
+                    return deduplicated.isEmpty ? "" : deduplicated
+                }
+            }
+        }
+
+        return current
     }
 
     // MARK: - Streaming Finalization
@@ -196,6 +277,7 @@ final class TranscriptionPipeline: ObservableObject {
                 )
                 if !tailText.isEmpty {
                     chunkTexts.append(tailText)
+                    updateStreamingText(newChunkText: tailText)
                     logger.info("Tail transcribed: \(tailText.prefix(60))")
                 }
             } catch {
@@ -203,13 +285,18 @@ final class TranscriptionPipeline: ObservableObject {
             }
         }
 
-        // Join all chunk texts and deduplicate word boundaries
-        let rawText = joinChunkTexts(chunkTexts)
+        // Mark all text as confirmed now that recording is done
+        appState.confirmedCharCount = appState.streamingText.count
+
+        // Use the incrementally built streaming text, fall back to joinChunkTexts for safety
+        let rawText = joinedStreamText.isEmpty ? joinChunkTexts(chunkTexts) : joinedStreamText
 
         // Clean up streaming state
         audioRecorder.onChunkReady = nil
         chunkTexts = []
         lastChunkText = ""
+        joinedStreamText = ""
+        previousRawChunkText = ""
 
         guard !rawText.isEmpty else {
             logger.info("Streaming transcription returned empty text")
@@ -257,45 +344,12 @@ final class TranscriptionPipeline: ObservableObject {
             let currentText = texts[i]
             guard !currentText.isEmpty else { continue }
 
-            let prevWords = result.split(separator: " ")
-            let currWords = currentText.split(separator: " ")
-
-            guard !prevWords.isEmpty, !currWords.isEmpty else {
-                result += " " + currentText
-                continue
-            }
-
-            // Check if the first 1-2 words of the current chunk match the last words of the previous result.
-            // 200ms overlap ≈ 1 word, so maxOverlap=2 is generous. Use case-insensitive matching
-            // (Whisper often capitalizes the first word of each chunk) and skip matches where all
-            // matched words are very short (<=2 chars) to avoid false positives on "I", "a", etc.
-            var overlapCount = 0
-            let maxOverlap = min(2, min(prevWords.count, currWords.count))
-
-            for checkLen in (1...maxOverlap).reversed() {
-                let prevTail = prevWords.suffix(checkLen).map(String.init)
-                let currHead = currWords.prefix(checkLen).map(String.init)
-                if prevTail.map({ $0.lowercased() }) == currHead.map({ $0.lowercased() }) {
-                    // Skip if all matched words are very short (likely coincidental)
-                    let allShort = prevTail.allSatisfy { $0.count <= 2 }
-                    if !allShort {
-                        overlapCount = checkLen
-                        break
-                    }
-                }
-            }
-
-            if overlapCount > 0 {
-                let deduplicated = currWords.dropFirst(overlapCount).joined(separator: " ")
-                if !deduplicated.isEmpty {
-                    result += " " + deduplicated
-                }
-            } else {
-                result += " " + currentText
+            let deduped = deduplicateOverlap(previous: i > 0 ? texts[i - 1] : "", current: currentText)
+            if !deduped.isEmpty {
+                result += " " + deduped
             }
         }
 
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
-
