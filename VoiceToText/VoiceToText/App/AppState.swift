@@ -59,6 +59,7 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.soundFeedback) var soundFeedback: Bool = true
     @AppStorage(StorageKey.privacyMode) var privacyMode: Bool = false
     @AppStorage(StorageKey.selectedLanguage) var selectedLanguage: String = "en"
+    @AppStorage(StorageKey.activeAIModePresetId) var activeAIModePresetId: String = ""
     @AppStorage(StorageKey.appContextEnabled) var appContextEnabled: Bool = true
     @AppStorage(StorageKey.preferDirectInsertion) var preferDirectInsertion: Bool = true
 

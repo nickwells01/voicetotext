@@ -155,6 +155,9 @@ struct MenuBarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .controlSize(.small)
+                .onChange(of: appState.selectedLanguage) { _ in
+                    Task { await TranscriptionPipeline.shared.loadSelectedModel() }
+                }
             }
 
             // Activation mode picker
@@ -167,6 +170,9 @@ struct MenuBarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .controlSize(.small)
+                .onChange(of: appState.activationMode) { _ in
+                    TranscriptionPipeline.shared.reloadHotKeys()
+                }
             }
 
             // AI Cleanup toggle
@@ -201,17 +207,8 @@ struct MenuBarView: View {
             // AI Mode preset picker (when AI cleanup is enabled)
             if appState.llmConfig.isEnabled {
                 configControl(icon: "wand.and.stars", label: "AI Mode") {
-                    Picker("", selection: Binding(
-                        get: { AIModePreset.activePreset()?.id.uuidString ?? "none" },
-                        set: { newValue in
-                            if newValue == "none" {
-                                AIModePreset.setActivePreset(nil)
-                            } else if let preset = AIModePreset.allPresets().first(where: { $0.id.uuidString == newValue }) {
-                                AIModePreset.setActivePreset(preset)
-                            }
-                        }
-                    )) {
-                        Text("Default").tag("none")
+                    Picker("", selection: $appState.activeAIModePresetId) {
+                        Text("Default").tag("")
                         Divider()
                         ForEach(AIModePreset.allPresets()) { preset in
                             Text(preset.name).tag(preset.id.uuidString)
