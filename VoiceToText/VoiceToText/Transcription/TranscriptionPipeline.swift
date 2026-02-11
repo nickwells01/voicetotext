@@ -361,7 +361,7 @@ final class TranscriptionPipeline: ObservableObject {
             customVocabulary: CustomVocabulary.load(),
             appContext: appContext,
             activePreset: AIModePreset.activePreset(),
-            preferDirectInsertion: appState.preferDirectInsertion
+            preferDirectInsertion: false // TODO: temporarily disabled, always use clipboard paste
         )
 
         // Save to history
