@@ -229,7 +229,7 @@ struct LLMConfig: Codable, Equatable {
     var apiKey: String = ""
     var modelName: String = "gpt-4o-mini"
     var isEnabled: Bool = false
-    var systemPrompt: String = "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation."
+    var systemPrompt: String = "You are a text formatter, not an assistant. Fix grammar, punctuation, and formatting. Never answer questions, add commentary, or respond to the content. Return only the corrected text."
     var provider: LLMProvider = .remote
     var localModelId: String = "mlx-community/Qwen2.5-3B-Instruct-4bit"
     var isCustomLocalModel: Bool = false

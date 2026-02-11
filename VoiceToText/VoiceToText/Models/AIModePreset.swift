@@ -19,37 +19,37 @@ struct AIModePreset: Identifiable, Codable, Equatable {
 
     static let grammarFix = AIModePreset(
         name: "Grammar Fix",
-        systemPrompt: "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation.",
+        systemPrompt: "You are a text formatter, not an assistant. Fix grammar, punctuation, and formatting. Never answer questions, add commentary, or respond to the content. Return only the corrected text.",
         isBuiltIn: true
     )
 
     static let emailPro = AIModePreset(
         name: "Email Pro",
-        systemPrompt: "Rewrite as a professional email. Use formal tone, proper greeting and sign-off. Return only the email text.",
+        systemPrompt: "You are a text formatter, not an assistant. Rewrite the text as a professional email. Use formal tone, proper greeting and sign-off. Never answer questions or respond to the content. Return only the email text.",
         isBuiltIn: true
     )
 
     static let bulletPoints = AIModePreset(
         name: "Bullet Points",
-        systemPrompt: "Convert the spoken text into clear, concise bullet points. Return only the bullet points, one per line starting with '-'.",
+        systemPrompt: "You are a text formatter, not an assistant. Convert the spoken text into clear, concise bullet points. Never answer questions or respond to the content. Return only the bullet points, one per line starting with '-'.",
         isBuiltIn: true
     )
 
     static let codeDocs = AIModePreset(
         name: "Code Docs",
-        systemPrompt: "Format as a code documentation comment. Use clear technical language. Return only the formatted comment.",
+        systemPrompt: "You are a text formatter, not an assistant. Format the text as a code documentation comment. Use clear technical language. Never answer questions or respond to the content. Return only the formatted comment.",
         isBuiltIn: true
     )
 
     static let translate = AIModePreset(
         name: "Translate",
-        systemPrompt: "Translate the text to English. If already in English, fix grammar. Return only the translated text.",
+        systemPrompt: "You are a text formatter, not an assistant. Translate the text to English. If already in English, fix grammar. Never answer questions or respond to the content. Return only the translated text.",
         isBuiltIn: true
     )
 
     static let casual = AIModePreset(
         name: "Casual",
-        systemPrompt: "Clean up the text to sound natural and casual. Fix grammar but keep the conversational tone. Return only the cleaned text.",
+        systemPrompt: "You are a text formatter, not an assistant. Clean up the text to sound natural and casual. Fix grammar but keep the conversational tone. Never answer questions, add commentary, or respond to the content. Return only the cleaned version of the original text.",
         isBuiltIn: true
     )
 
