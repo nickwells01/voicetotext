@@ -20,6 +20,13 @@ enum WhisperManagerError: LocalizedError {
     }
 }
 
+// MARK: - Decode Result
+
+struct DecodeResult {
+    let segments: [TranscriptionSegment]
+    let windowStartAbsMs: Int
+}
+
 // MARK: - WhisperManager
 
 actor WhisperManager {
@@ -155,6 +162,57 @@ actor WhisperManager {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         logger.info("Chunk transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio")
         return text
+    }
+
+    // MARK: - Window Transcription (Sliding Window Pipeline)
+
+    /// Transcribe a sliding window of audio with token-level timestamps enabled.
+    func transcribeWindow(
+        frames: [Float],
+        windowStartAbsMs: Int,
+        prompt: String?
+    ) async throws -> DecodeResult {
+        guard let whisper else {
+            throw WhisperManagerError.modelNotLoaded
+        }
+
+        guard !frames.isEmpty else {
+            return DecodeResult(segments: [], windowStartAbsMs: windowStartAbsMs)
+        }
+
+        // Enable token-level timestamps
+        whisper.params.token_timestamps = true
+        whisper.params.thold_pt = 0.01
+        whisper.params.thold_ptsum = 0.01
+
+        // Set initial_prompt for decoder context continuity
+        var promptCString: UnsafeMutablePointer<CChar>?
+        if let prompt, !prompt.isEmpty {
+            promptCString = strdup(prompt)
+            whisper.params.initial_prompt = UnsafePointer(promptCString)
+        }
+        defer {
+            if promptCString != nil { free(promptCString) }
+            whisper.params.initial_prompt = nil
+            // Restore token_timestamps to off for non-window callers
+            whisper.params.token_timestamps = false
+        }
+
+        let audioDuration = Double(frames.count) / 16000.0
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let segments: [TranscriptionSegment]
+        do {
+            segments = try await whisper.transcribeWithTokens(audioFrames: frames)
+        } catch {
+            logger.error("Window transcription failed: \(error.localizedDescription)")
+            throw WhisperManagerError.transcriptionFailed(error.localizedDescription)
+        }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        logger.info("Window transcription took \(String(format: "%.3f", elapsed))s for \(String(format: "%.2f", audioDuration))s audio (RTF: \(String(format: "%.2f", elapsed / max(audioDuration, 0.001)))x)")
+
+        return DecodeResult(segments: segments, windowStartAbsMs: windowStartAbsMs)
     }
 
     // MARK: - Cleanup

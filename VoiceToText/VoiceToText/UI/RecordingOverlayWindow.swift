@@ -69,4 +69,19 @@ final class RecordingOverlayWindow: NSPanel {
     func hide() {
         orderOut(nil)
     }
+
+    @MainActor
+    func showToast(_ message: String) {
+        // Show overlay briefly with toast message, then auto-hide after 2 seconds
+        AppState.shared.toastMessage = message
+        orderFrontRegardless()
+
+        let minToastHeight: CGFloat = 80
+        updateHeight(minToastHeight)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            AppState.shared.toastMessage = nil
+            self?.orderOut(nil)
+        }
+    }
 }

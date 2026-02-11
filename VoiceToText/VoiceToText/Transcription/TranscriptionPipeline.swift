@@ -18,23 +18,30 @@ final class TranscriptionPipeline: ObservableObject {
     private let appState = AppState.shared
     private let hotKeyManager = HotKeyManager()
 
+    // MARK: - Pipeline Components
+
+    private let config = PipelineConfig()
+    private let stabilizer = TranscriptStabilizer()
+    private let silenceDetector = SilenceDetector()
+    private var ringBuffer: AudioRingBuffer?
+
+    // MARK: - Tick Loop State
+
+    private var tickTimer: Timer?
+    private var isDecoding = false
+    private var needsRedecode = false
+
+    // MARK: - Focus Tracking
+
+    private var frontmostApp: NSRunningApplication?
+
+    // MARK: - LLM Burst State
+
+    private var lastLLMCleanCharCount = 0
+
     // MARK: - State
 
     @Published var isModelReady: Bool = false
-
-    // MARK: - Streaming State
-
-    /// Accumulated chunk transcriptions during streaming recording
-    private var chunkTexts: [String] = []
-    /// Last chunk's text used as decoder context for next chunk
-    private var lastChunkText: String = ""
-    /// Task for in-flight chunk transcription
-    private var chunkTranscriptionTask: Task<Void, Never>?
-
-    /// Joined streaming text built incrementally from chunks
-    private var joinedStreamText: String = ""
-    /// The raw text of the previous chunk (for overlap deduplication)
-    private var previousRawChunkText: String = ""
 
     // MARK: - App Lifecycle
 
@@ -49,7 +56,6 @@ final class TranscriptionPipeline: ObservableObject {
         hotKeyManager.setup()
         logger.info("TranscriptionPipeline setup complete")
 
-        // Load model in background
         Task {
             await loadSelectedModel()
         }
@@ -96,23 +102,6 @@ final class TranscriptionPipeline: ObservableObject {
         }
     }
 
-    // MARK: - Model-Based Chunk Interval
-
-    private func chunkInterval(for modelId: String) -> Double {
-        switch modelId {
-        case "tiny.en", "base.en":
-            return 1.0
-        case "small.en":
-            return 1.5
-        case "medium.en", "large-v3-turbo":
-            return 2.0
-        case "large-v3":
-            return 3.0
-        default:
-            return 3.0
-        }
-    }
-
     // MARK: - Recording Control
 
     func startRecording() {
@@ -121,27 +110,34 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        // Reset streaming state
-        chunkTexts = []
-        lastChunkText = ""
-        chunkTranscriptionTask = nil
-        joinedStreamText = ""
-        previousRawChunkText = ""
+        // Record frontmost app for paste focus restoration
+        frontmostApp = clipboardPaster.recordFrontmostApp()
+
+        // Reset pipeline state
+        stabilizer.reset()
+        silenceDetector.reset()
+        isDecoding = false
+        needsRedecode = false
+        lastLLMCleanCharCount = 0
         appState.resetStreamingText()
 
-        // Set model-based chunk interval
-        audioRecorder.chunkIntervalSeconds = chunkInterval(for: appState.selectedModelName)
-
-        // Wire up chunk emission for streaming transcription
-        audioRecorder.onChunkReady = { [weak self] chunk in
-            self?.processChunk(chunk)
-        }
+        // Create ring buffer for this session
+        let buffer = AudioRingBuffer(capacity: config.windowSamples, sampleRate: config.sampleRate)
+        ringBuffer = buffer
 
         do {
-            try audioRecorder.startCapture()
+            try audioRecorder.startCapture(ringBuffer: buffer)
             appState.transitionTo(.recording)
             RecordingOverlayWindow.shared.show()
-            logger.info("Recording started (streaming mode, chunk interval: \(self.audioRecorder.chunkIntervalSeconds)s)")
+
+            // Start tick timer
+            tickTimer = Timer.scheduledTimer(withTimeInterval: config.tickInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.tick()
+                }
+            }
+
+            logger.info("Recording started (sliding window mode, tick: \(self.config.tickMs)ms, window: \(self.config.windowMs)ms)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
             appState.transitionTo(.error(error.localizedDescription))
@@ -154,152 +150,175 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        // Get only the unprocessed tail (samples after last emitted chunk)
-        let tailSamples = audioRecorder.stopCaptureAndGetTail()
+        // Stop tick timer
+        tickTimer?.invalidate()
+        tickTimer = nil
 
-        // Begin streaming finalization pipeline
+        // Stop audio capture
+        audioRecorder.stopCapture()
+
+        // Begin finalization
         Task {
-            await finalizeStreamingTranscription(tailSamples: tailSamples)
+            await finalizeRecording()
         }
     }
 
     func cancelRecording() {
         if appState.recordingState == .recording {
-            _ = audioRecorder.stopCapture()
+            tickTimer?.invalidate()
+            tickTimer = nil
+            audioRecorder.stopCapture()
         }
-        chunkTranscriptionTask?.cancel()
-        chunkTranscriptionTask = nil
-        chunkTexts = []
-        lastChunkText = ""
-        joinedStreamText = ""
-        previousRawChunkText = ""
-        audioRecorder.onChunkReady = nil
+        isDecoding = false
+        needsRedecode = false
+        stabilizer.reset()
+        silenceDetector.reset()
+        ringBuffer = nil
+        frontmostApp = nil
         appState.resetStreamingText()
         appState.transitionTo(.idle)
         RecordingOverlayWindow.shared.hide()
         logger.info("Recording cancelled")
     }
 
-    // MARK: - Streaming Chunk Processing
+    // MARK: - Tick Loop
 
-    /// Called during recording when a chunk is ready.
-    /// Each chunk's Task awaits the previous one so that:
-    ///  1. `lastChunkText` is up-to-date when captured as decoder context
-    ///  2. Only one `transcribeChunk` call is in-flight at a time, preventing
-    ///     the Whisper instance from throwing `instanceBusy` via actor reentrancy
-    private func processChunk(_ chunk: [Float]) {
-        let previousTask = chunkTranscriptionTask
-        chunkTranscriptionTask = Task {
-            // Wait for the previous chunk to finish before starting ours
-            if let previousTask {
-                await previousTask.value
-            }
-            let previousText = self.lastChunkText
-            do {
-                let text = try await self.whisperManager.transcribeChunk(frames: chunk, previousText: previousText)
-                guard !text.isEmpty else { return }
-                self.chunkTexts.append(text)
-                self.lastChunkText = text
-                self.updateStreamingText(newChunkText: text)
-                self.logger.info("Chunk \(self.chunkTexts.count) transcribed: \(text.prefix(60))")
-            } catch {
-                self.logger.error("Chunk transcription failed: \(error.localizedDescription)")
-            }
+    private func tick() {
+        // Backpressure: if a decode is already in flight, mark that we need a redecode
+        if isDecoding {
+            needsRedecode = true
+            return
         }
-    }
 
-    // MARK: - Streaming Text Updates
+        guard let window = audioRecorder.getLatestWindow(),
+              !window.pcm.isEmpty else {
+            return
+        }
 
-    /// Update the live streaming text shown in the overlay.
-    /// When a new chunk arrives, the previous chunk's contribution becomes "confirmed" (locked)
-    /// and only the new chunk's text is tentative.
-    private func updateStreamingText(newChunkText: String) {
-        if joinedStreamText.isEmpty {
-            joinedStreamText = newChunkText
-            appState.confirmedCharCount = 0
+        // Check for silence
+        if silenceDetector.update(samples: window.pcm, currentAbsMs: window.windowEndAbsMs) {
+            return  // Silence detected, skip decode to save resources
+        }
+
+        isDecoding = true
+
+        // Build prompt from committed text
+        let committed = stabilizer.state.rawCommitted
+        let prompt: String?
+        if committed.isEmpty {
+            prompt = nil
+        } else if committed.count <= config.maxPromptChars {
+            prompt = committed
         } else {
-            let deduped = deduplicateOverlap(previous: previousRawChunkText, current: newChunkText)
-            let prevLength = joinedStreamText.count
-            if !deduped.isEmpty {
-                joinedStreamText += " " + deduped
-            }
-            appState.confirmedCharCount = prevLength
+            prompt = String(committed.suffix(config.maxPromptChars))
         }
-        appState.streamingText = joinedStreamText
-        previousRawChunkText = newChunkText
-    }
 
-    /// Remove overlapping leading words from `current` that match trailing words of `previous`.
-    /// The 200ms audio overlap between chunks can cause Whisper to repeat 1-2 words at boundaries.
-    private func deduplicateOverlap(previous: String, current: String) -> String {
-        guard !previous.isEmpty, !current.isEmpty else { return current }
+        let windowStartAbsMs = window.windowStartAbsMs
+        let windowEndAbsMs = window.windowEndAbsMs
+        let frames = window.pcm
+        let commitMarginMs = config.commitMarginMs
 
-        let prevWords = previous.split(separator: " ")
-        let currWords = current.split(separator: " ")
+        Task {
+            do {
+                let result = try await whisperManager.transcribeWindow(
+                    frames: frames,
+                    windowStartAbsMs: windowStartAbsMs,
+                    prompt: prompt
+                )
 
-        guard !prevWords.isEmpty, !currWords.isEmpty else { return current }
+                await MainActor.run {
+                    self.stabilizer.update(
+                        decodeResult: result,
+                        windowEndAbsMs: windowEndAbsMs,
+                        commitMarginMs: commitMarginMs
+                    )
+                    self.updateUIFromStabilizer()
+                    self.isDecoding = false
 
-        let maxOverlap = min(2, min(prevWords.count, currWords.count))
+                    if self.needsRedecode {
+                        self.needsRedecode = false
+                        self.tick()
+                    }
 
-        for checkLen in (1...maxOverlap).reversed() {
-            let prevTail = prevWords.suffix(checkLen).map(String.init)
-            let currHead = currWords.prefix(checkLen).map(String.init)
-            if prevTail.map({ $0.lowercased() }) == currHead.map({ $0.lowercased() }) {
-                // Skip if all matched words are very short (likely coincidental)
-                let allShort = prevTail.allSatisfy { $0.count <= 2 }
-                if !allShort {
-                    let deduplicated = currWords.dropFirst(checkLen).joined(separator: " ")
-                    return deduplicated.isEmpty ? "" : deduplicated
+                    self.maybeRunLLMBurstClean()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isDecoding = false
+                    self.logger.error("Tick decode failed: \(error.localizedDescription)")
                 }
             }
         }
-
-        return current
     }
 
-    // MARK: - Streaming Finalization
+    // MARK: - UI Updates
 
-    private func finalizeStreamingTranscription(tailSamples: [Float]) async {
+    private func updateUIFromStabilizer() {
+        let state = stabilizer.state
+        appState.committedText = state.cleanedCommitted ?? state.rawCommitted
+        appState.speculativeText = state.rawSpeculative
+    }
+
+    // MARK: - LLM Burst Cleaning
+
+    private func maybeRunLLMBurstClean() {
+        let llmConfig = LLMConfig.load()
+        guard llmConfig.isEnabled && llmConfig.isValid else { return }
+
+        let committed = stabilizer.state.rawCommitted
+        let newChars = committed.count - lastLLMCleanCharCount
+        guard newChars > 200 else { return }
+
+        lastLLMCleanCharCount = committed.count
+
+        // Clean only the new portion at sentence boundary
+        let postProcessor = LLMPostProcessor(config: llmConfig)
+        Task {
+            let cleaned = await postProcessor.processChunked(rawText: committed)
+            await MainActor.run {
+                self.stabilizer.state.cleanedCommitted = cleaned
+                self.updateUIFromStabilizer()
+            }
+        }
+    }
+
+    // MARK: - Finalization
+
+    private func finalizeRecording() async {
         appState.transitionTo(.transcribing)
 
-        // Wait for any in-flight chunk transcription to complete
-        if let inFlightTask = chunkTranscriptionTask {
-            await inFlightTask.value
-            chunkTranscriptionTask = nil
+        // Wait for any in-flight decode to complete
+        while isDecoding {
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         }
 
-        // Transcribe the tail (audio after last emitted chunk)
-        if !tailSamples.isEmpty {
+        // Final decode with full window, commit everything (margin=0)
+        if let window = ringBuffer?.getWindow(), !window.pcm.isEmpty {
             do {
-                let tailText = try await whisperManager.transcribeChunk(
-                    frames: tailSamples,
-                    previousText: lastChunkText
+                let result = try await whisperManager.transcribeWindow(
+                    frames: window.pcm,
+                    windowStartAbsMs: window.windowStartAbsMs,
+                    prompt: stabilizer.state.rawCommitted.isEmpty ? nil : String(stabilizer.state.rawCommitted.suffix(config.maxPromptChars))
                 )
-                if !tailText.isEmpty {
-                    chunkTexts.append(tailText)
-                    updateStreamingText(newChunkText: tailText)
-                    logger.info("Tail transcribed: \(tailText.prefix(60))")
-                }
+                stabilizer.update(
+                    decodeResult: result,
+                    windowEndAbsMs: window.windowEndAbsMs,
+                    commitMarginMs: 0  // Commit everything
+                )
             } catch {
-                logger.error("Tail transcription failed: \(error.localizedDescription)")
+                logger.error("Final decode failed: \(error.localizedDescription)")
             }
         }
 
-        // Mark all text as confirmed now that recording is done
-        appState.confirmedCharCount = appState.streamingText.count
+        // Finalize all speculative text as committed
+        stabilizer.finalizeAll()
+        updateUIFromStabilizer()
 
-        // Use the incrementally built streaming text, fall back to joinChunkTexts for safety
-        let rawText = joinedStreamText.isEmpty ? joinChunkTexts(chunkTexts) : joinedStreamText
-
-        // Clean up streaming state
-        audioRecorder.onChunkReady = nil
-        chunkTexts = []
-        lastChunkText = ""
-        joinedStreamText = ""
-        previousRawChunkText = ""
+        let rawText = stabilizer.state.rawCommitted
 
         guard !rawText.isEmpty else {
-            logger.info("Streaming transcription returned empty text")
+            logger.info("Recording produced empty transcription")
+            cleanup()
             appState.transitionTo(.idle)
             RecordingOverlayWindow.shared.hide()
             return
@@ -312,11 +331,11 @@ final class TranscriptionPipeline: ObservableObject {
         if llmConfig.isEnabled && llmConfig.isValid {
             appState.transitionTo(.processing)
             let postProcessor = LLMPostProcessor(config: llmConfig)
-            finalText = await postProcessor.process(rawText: rawText)
+            finalText = await postProcessor.processChunked(rawText: rawText)
             logger.info("LLM processed: '\(rawText.prefix(40))' → '\(finalText.prefix(40))'")
         }
 
-        // Paste via clipboard
+        // Paste via clipboard with focus tracking
         appState.lastTranscription = finalText
 
         RecordingOverlayWindow.shared.hide()
@@ -324,32 +343,31 @@ final class TranscriptionPipeline: ObservableObject {
         // Brief settle time for window server
         try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
-        await clipboardPaster.paste(text: finalText)
+        let pasteResult = await clipboardPaster.paste(text: finalText, targetApp: frontmostApp)
 
-        appState.transitionTo(.idle)
-        logger.info("Streaming pipeline complete, pasted text: \(finalText.prefix(80))")
-    }
-
-    // MARK: - Chunk Text Joining
-
-    /// Join chunk texts with word boundary deduplication.
-    /// The 200ms overlap between chunks can cause repeated words at boundaries.
-    private func joinChunkTexts(_ texts: [String]) -> String {
-        guard !texts.isEmpty else { return "" }
-        guard texts.count > 1 else { return texts[0] }
-
-        var result = texts[0]
-
-        for i in 1..<texts.count {
-            let currentText = texts[i]
-            guard !currentText.isEmpty else { continue }
-
-            let deduped = deduplicateOverlap(previous: i > 0 ? texts[i - 1] : "", current: currentText)
-            if !deduped.isEmpty {
-                result += " " + deduped
-            }
+        switch pasteResult {
+        case .pasted:
+            break
+        case .copiedOnly(let reason):
+            appState.toastMessage = "Copied to clipboard (paste manually)"
+            logger.warning("Paste failed: \(reason). Text on clipboard.")
+            RecordingOverlayWindow.shared.showToast("Copied — paste with ⌘V")
         }
 
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleanup()
+        appState.transitionTo(.idle)
+        logger.info("Pipeline complete, final text: \(finalText.prefix(80))")
+    }
+
+    // MARK: - Cleanup
+
+    private func cleanup() {
+        stabilizer.reset()
+        silenceDetector.reset()
+        ringBuffer = nil
+        frontmostApp = nil
+        isDecoding = false
+        needsRedecode = false
+        lastLLMCleanCharCount = 0
     }
 }

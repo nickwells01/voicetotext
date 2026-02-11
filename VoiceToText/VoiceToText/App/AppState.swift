@@ -32,10 +32,18 @@ final class AppState: ObservableObject {
     @Published var recordingState: RecordingState = .idle
     @Published var recordingDuration: TimeInterval = 0
     @Published var lastTranscription: String = ""
-    @Published var streamingText: String = ""
-    @Published var confirmedCharCount: Int = 0
+    @Published var committedText: String = ""
+    @Published var speculativeText: String = ""
+    @Published var toastMessage: String?
     @Published var errorMessage: String?
     @Published var showOnboarding: Bool = false
+
+    // MARK: - Computed
+
+    var displayText: String {
+        speculativeText.isEmpty ? committedText
+            : committedText + (committedText.isEmpty ? "" : " ") + speculativeText
+    }
 
     // MARK: - Settings (backed by UserDefaults)
 
@@ -46,7 +54,7 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.fnDoubleTapInterval) var fnDoubleTapInterval: Double = 0.4
     @AppStorage(StorageKey.fastMode) var fastMode: Bool = false
 
-    // MARK: - Computed
+    // MARK: - Computed Settings
 
     var currentActivationMode: ActivationMode {
         ActivationMode(rawValue: activationMode) ?? .holdToTalk
@@ -79,8 +87,9 @@ final class AppState: ObservableObject {
     }
 
     func resetStreamingText() {
-        streamingText = ""
-        confirmedCharCount = 0
+        committedText = ""
+        speculativeText = ""
+        toastMessage = nil
     }
 
     // MARK: - State Transitions

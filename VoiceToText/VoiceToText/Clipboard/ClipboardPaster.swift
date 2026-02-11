@@ -2,15 +2,29 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
+// MARK: - Paste Result
+
+enum PasteResult {
+    case pasted
+    case copiedOnly(reason: String)
+}
+
 // MARK: - Clipboard Paster
 
 @MainActor
 final class ClipboardPaster {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "ClipboardPaster")
 
+    // MARK: - Focus Tracking
+
+    /// Record the current frontmost application for later focus restoration.
+    func recordFrontmostApp() -> NSRunningApplication? {
+        NSWorkspace.shared.frontmostApplication
+    }
+
     // MARK: - Paste Text
 
-    func paste(text: String) async {
+    func paste(text: String, targetApp: NSRunningApplication? = nil) async -> PasteResult {
         // Check accessibility first
         if !AXIsProcessTrusted() {
             logger.warning("Accessibility permission not granted — auto-paste will not work")
@@ -22,26 +36,49 @@ final class ClipboardPaster {
 
         // Put text on clipboard
         let pasteboard = NSPasteboard.general
+        let previousChangeCount = pasteboard.changeCount
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+
+        // Verify clipboard was set
+        guard pasteboard.changeCount != previousChangeCount else {
+            logger.error("Failed to set pasteboard contents")
+            return .copiedOnly(reason: "Clipboard write failed")
+        }
         logger.info("Set transcribed text on pasteboard (\(text.count) chars)")
 
-        // Small delay to ensure pasteboard update is visible to other apps
-        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        // Attempt to activate target app
+        if let targetApp {
+            targetApp.activate()
 
-        // Primary: CGEvent posted to session event tap (proven approach from Maccy/Clipy)
+            // Brief delay for app activation
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+
+            // Verify focus was restored
+            let currentFrontmost = NSWorkspace.shared.frontmostApplication
+            if currentFrontmost?.processIdentifier != targetApp.processIdentifier {
+                logger.warning("Failed to restore focus to \(targetApp.localizedName ?? "unknown"). Text is on clipboard.")
+                return .copiedOnly(reason: "Could not restore focus to \(targetApp.localizedName ?? "target app")")
+            }
+        } else {
+            // No target app — small delay for window server
+            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        }
+
+        // Primary: CGEvent posted to session event tap
         if simulatePasteViaCGEvent() {
             logger.info("Auto-paste succeeded via CGEvent")
-            return
+            return .pasted
         }
 
         // Fallback: AppleScript via System Events
         if simulatePasteViaAppleScript() {
             logger.info("Auto-paste succeeded via AppleScript")
-            return
+            return .pasted
         }
 
         logger.warning("Auto-paste failed — text is on clipboard for manual Cmd+V")
+        return .copiedOnly(reason: "Paste simulation failed")
     }
 
     // MARK: - Paste via CGEvent (primary)
@@ -69,8 +106,6 @@ final class ClipboardPaster {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
-        // Post to session event tap — proven working approach used by Maccy, Clipy, Espanso.
-        // postToPid is unreliable on modern macOS (silent failures).
         keyDown.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cgSessionEventTap)
 

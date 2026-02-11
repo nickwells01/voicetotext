@@ -23,5 +23,10 @@ let package = Package(
             path: "VoiceToText",
             exclude: ["Resources/Info.plist", "Resources/VoiceToText.entitlements"]
         ),
+        .testTarget(
+            name: "VoiceToTextTests",
+            dependencies: ["VoiceToText"],
+            path: "VoiceToTextTests"
+        ),
     ]
 )

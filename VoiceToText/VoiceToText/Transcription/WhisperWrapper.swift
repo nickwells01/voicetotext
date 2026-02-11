@@ -9,6 +9,22 @@ struct Segment: Equatable {
     let text: String
 }
 
+// MARK: - Transcription Segment (Token-Level)
+
+struct TranscriptionToken {
+    let text: String
+    let startTimeMs: Int
+    let endTimeMs: Int
+    let probability: Float
+}
+
+struct TranscriptionSegment {
+    let text: String
+    let startTimeMs: Int
+    let endTimeMs: Int
+    let tokens: [TranscriptionToken]
+}
+
 // MARK: - Sampling Strategy
 
 enum WhisperSamplingStrategy: UInt32 {
@@ -120,6 +136,65 @@ class Whisper {
                         startTime: Int(startTime) * 10,
                         endTime: Int(endTime) * 10,
                         text: String(cString: text)
+                    ))
+                }
+
+                continuation.resume(returning: segments)
+            }
+        }
+    }
+
+    /// Transcribe with token-level timestamps for sliding window pipeline.
+    func transcribeWithTokens(audioFrames: [Float]) async throws -> [TranscriptionSegment] {
+        guard !inProgress else { throw WhisperError.instanceBusy }
+        guard !audioFrames.isEmpty else { throw WhisperError.invalidFrames }
+
+        inProgress = true
+        defer { inProgress = false }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                whisper_full(self.whisperContext, self.params.whisperParams, audioFrames, Int32(audioFrames.count))
+
+                let segmentCount = whisper_full_n_segments(self.whisperContext)
+                var segments: [TranscriptionSegment] = []
+                segments.reserveCapacity(Int(segmentCount))
+
+                for segIdx in 0..<segmentCount {
+                    guard let segText = whisper_full_get_segment_text(self.whisperContext, segIdx) else { continue }
+                    let segStart = Int(whisper_full_get_segment_t0(self.whisperContext, segIdx)) * 10  // centiseconds → ms
+                    let segEnd = Int(whisper_full_get_segment_t1(self.whisperContext, segIdx)) * 10
+
+                    // Extract token-level data
+                    let tokenCount = whisper_full_n_tokens(self.whisperContext, segIdx)
+                    var tokens: [TranscriptionToken] = []
+                    tokens.reserveCapacity(Int(tokenCount))
+
+                    for tokIdx in 0..<tokenCount {
+                        let tokenData = whisper_full_get_token_data(self.whisperContext, segIdx, tokIdx)
+                        guard let tokenTextPtr = whisper_full_get_token_text(self.whisperContext, segIdx, tokIdx) else { continue }
+                        let tokenText = String(cString: tokenTextPtr)
+
+                        // Skip special tokens (empty or whitespace-only after trimming)
+                        let trimmed = tokenText.trimmingCharacters(in: .whitespaces)
+                        if trimmed.isEmpty || trimmed.hasPrefix("[") || trimmed.hasPrefix("<|") { continue }
+
+                        let tokStartMs = Int(tokenData.t0) * 10
+                        let tokEndMs = Int(tokenData.t1) * 10
+
+                        tokens.append(TranscriptionToken(
+                            text: tokenText,
+                            startTimeMs: tokStartMs,
+                            endTimeMs: tokEndMs,
+                            probability: tokenData.p
+                        ))
+                    }
+
+                    segments.append(TranscriptionSegment(
+                        text: String(cString: segText),
+                        startTimeMs: segStart,
+                        endTimeMs: segEnd,
+                        tokens: tokens
                     ))
                 }
 

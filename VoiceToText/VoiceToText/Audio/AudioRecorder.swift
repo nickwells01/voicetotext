@@ -30,8 +30,7 @@ final class AudioRecorder {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "AudioRecorder")
 
     private let audioEngine = AVAudioEngine()
-    private var accumulatedSamples: [Float] = []
-    private var isRecording = false
+    private(set) var isRecording = false
 
     // Target format: 16kHz mono Float32
     private static let targetSampleRate: Double = 16000.0
@@ -44,30 +43,24 @@ final class AudioRecorder {
                       interleaved: false)!
     }
 
-    // MARK: - Streaming Chunk Support
+    // MARK: - Ring Buffer
 
-    /// Called every ~3 seconds during recording with new audio samples (includes 200ms overlap from previous chunk)
-    var onChunkReady: (([Float]) -> Void)?
+    private var ringBuffer: AudioRingBuffer?
 
-    /// How many samples have been emitted to chunks so far
-    private var lastChunkEndIndex: Int = 0
-
-    /// Timer for periodic chunk emission
-    private var chunkTimer: Timer?
-
-    /// Chunk interval in seconds
-    var chunkIntervalSeconds: Double = 3.0
-
-    /// Overlap in samples (200ms at 16kHz = 3200 samples)
-    private static let overlapSamples: Int = Int(targetSampleRate * 0.2)
+    /// Total samples recorded in this session.
+    var totalSamplesRecorded: Int {
+        ringBuffer?.totalSamplesWritten ?? 0
+    }
 
     // MARK: - Start Capture
 
-    func startCapture() throws {
+    func startCapture(ringBuffer: AudioRingBuffer) throws {
         guard !isRecording else {
             logger.warning("startCapture called while already recording")
             return
         }
+
+        self.ringBuffer = ringBuffer
 
         let inputNode = audioEngine.inputNode
 
@@ -86,8 +79,6 @@ final class AudioRecorder {
             throw AudioRecorderError.converterCreationFailed
         }
 
-        accumulatedSamples.removeAll()
-        lastChunkEndIndex = 0
         isRecording = true
 
         // Install tap using the hardware's native format
@@ -103,94 +94,32 @@ final class AudioRecorder {
         } catch {
             inputNode.removeTap(onBus: 0)
             isRecording = false
+            self.ringBuffer = nil
             throw AudioRecorderError.engineStartFailed(error)
-        }
-
-        // Set up chunk emission timer if streaming is enabled
-        if onChunkReady != nil {
-            chunkTimer = Timer.scheduledTimer(withTimeInterval: self.chunkIntervalSeconds, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.emitChunk()
-                }
-            }
         }
     }
 
     // MARK: - Stop Capture
 
-    func stopCapture() -> [Float] {
+    func stopCapture() {
         guard isRecording else {
             logger.warning("stopCapture called while not recording")
-            return []
+            return
         }
-
-        chunkTimer?.invalidate()
-        chunkTimer = nil
 
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false
 
-        let samples = accumulatedSamples
-        accumulatedSamples.removeAll()
-        lastChunkEndIndex = 0
-
-        logger.info("Audio capture stopped, collected \(samples.count) samples (\(String(format: "%.2f", Double(samples.count) / Self.targetSampleRate))s)")
-        return samples
+        let totalSamples = ringBuffer?.totalSamplesWritten ?? 0
+        logger.info("Audio capture stopped, recorded \(totalSamples) samples (\(String(format: "%.2f", Double(totalSamples) / Self.targetSampleRate))s)")
     }
 
-    /// Stop capture and return only the unprocessed tail samples (after the last emitted chunk).
-    /// Used in streaming mode so only the remaining audio needs transcription.
-    func stopCaptureAndGetTail() -> [Float] {
-        guard isRecording else {
-            logger.warning("stopCaptureAndGetTail called while not recording")
-            return []
-        }
+    // MARK: - Window Access
 
-        chunkTimer?.invalidate()
-        chunkTimer = nil
-
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-        isRecording = false
-
-        // Include overlap from the last emitted chunk so words at the boundary aren't lost
-        let tailStart = max(0, lastChunkEndIndex - Self.overlapSamples)
-        let tail: [Float]
-        if tailStart < accumulatedSamples.count {
-            tail = Array(accumulatedSamples[tailStart...])
-        } else {
-            tail = []
-        }
-
-        let totalDuration = Double(accumulatedSamples.count) / Self.targetSampleRate
-        let tailDuration = Double(tail.count) / Self.targetSampleRate
-        logger.info("Audio capture stopped (streaming). Total: \(String(format: "%.2f", totalDuration))s, Tail: \(String(format: "%.2f", tailDuration))s")
-
-        accumulatedSamples.removeAll()
-        lastChunkEndIndex = 0
-
-        return tail
-    }
-
-    // MARK: - Chunk Emission
-
-    private func emitChunk() {
-        guard isRecording, let onChunkReady else { return }
-
-        let currentCount = accumulatedSamples.count
-        guard currentCount > lastChunkEndIndex else { return }
-
-        // Include overlap from previous chunk for word boundary accuracy
-        let overlapStart = max(0, lastChunkEndIndex - Self.overlapSamples)
-        let chunk = Array(accumulatedSamples[overlapStart..<currentCount])
-
-        lastChunkEndIndex = currentCount
-
-        let chunkDuration = Double(chunk.count) / Self.targetSampleRate
-        logger.info("Emitting chunk: \(chunk.count) samples (\(String(format: "%.2f", chunkDuration))s)")
-
-        onChunkReady(chunk)
+    /// Get the latest audio window from the ring buffer.
+    func getLatestWindow() -> (pcm: [Float], windowStartAbsMs: Int, windowEndAbsMs: Int)? {
+        ringBuffer?.getWindow()
     }
 
     // MARK: - Buffer Processing
@@ -223,7 +152,6 @@ final class AudioRecorder {
         }
 
         if let error {
-            // Log but don't crash; occasional conversion errors are recoverable
             let msg = error.localizedDescription
             Task { @MainActor [logger] in
                 logger.error("Audio conversion error: \(msg)")
@@ -240,7 +168,7 @@ final class AudioRecorder {
                                                  count: Int(outputBuffer.frameLength)))
 
         Task { @MainActor [weak self] in
-            self?.accumulatedSamples.append(contentsOf: samples)
+            self?.ringBuffer?.append(samples: samples)
         }
     }
 }

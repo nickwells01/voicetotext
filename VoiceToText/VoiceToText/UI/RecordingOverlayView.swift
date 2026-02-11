@@ -10,9 +10,13 @@ struct RecordingOverlayView: View {
     var body: some View {
         VStack(spacing: 0) {
             statusBar
-            if !appState.streamingText.isEmpty || appState.recordingState == .transcribing {
+            if !appState.displayText.isEmpty || appState.recordingState == .transcribing {
                 Divider().opacity(0.3)
                 streamingTextArea
+            }
+            if let toast = appState.toastMessage {
+                Divider().opacity(0.3)
+                toastBar(toast)
             }
         }
         .frame(width: 340)
@@ -21,8 +25,11 @@ struct RecordingOverlayView: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
         )
-        .onChange(of: appState.streamingText) { _, newText in
-            updateWindowHeight(for: newText)
+        .onChange(of: appState.committedText) { _, _ in
+            updateWindowHeight()
+        }
+        .onChange(of: appState.speculativeText) { _, _ in
+            updateWindowHeight()
         }
     }
 
@@ -117,7 +124,12 @@ struct RecordingOverlayView: View {
                     .id("streamingTextBottom")
             }
             .frame(maxHeight: 220)
-            .onChange(of: appState.streamingText) { _, _ in
+            .onChange(of: appState.committedText) { _, _ in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo("streamingTextBottom", anchor: .bottom)
+                }
+            }
+            .onChange(of: appState.speculativeText) { _, _ in
                 withAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo("streamingTextBottom", anchor: .bottom)
                 }
@@ -126,17 +138,13 @@ struct RecordingOverlayView: View {
     }
 
     private var streamingTextContent: some View {
-        let text = appState.streamingText
-        let confirmedCount = appState.confirmedCharCount
-
-        let confirmedEnd = text.index(text.startIndex, offsetBy: min(confirmedCount, text.count))
-        let confirmedPart = String(text[text.startIndex..<confirmedEnd])
-        let tentativePart = String(text[confirmedEnd...])
+        let committed = appState.committedText
+        let speculative = appState.speculativeText
 
         return (
-            Text(confirmedPart)
+            Text(committed)
                 .foregroundColor(.primary) +
-            Text(tentativePart)
+            Text(speculative.isEmpty ? "" : (committed.isEmpty ? "" : " ") + speculative)
                 .foregroundColor(.primary.opacity(0.5)) +
             Text(cursorVisible ? " |" : "  ")
                 .foregroundColor(.primary.opacity(0.4))
@@ -145,6 +153,22 @@ struct RecordingOverlayView: View {
         .lineSpacing(3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { startCursorBlink() }
+    }
+
+    // MARK: - Toast Bar
+
+    private func toastBar(_ message: String) -> some View {
+        HStack {
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Cursor Blink
@@ -159,7 +183,8 @@ struct RecordingOverlayView: View {
 
     // MARK: - Dynamic Window Sizing
 
-    private func updateWindowHeight(for text: String) {
+    private func updateWindowHeight() {
+        let text = appState.displayText
         guard !text.isEmpty else { return }
 
         let font = NSFont.systemFont(ofSize: 13)
@@ -171,8 +196,11 @@ struct RecordingOverlayView: View {
             context: nil
         )
 
-        // Status bar (44) + divider (1) + text padding (16) + text height
-        let totalHeight = 44 + 1 + 16 + boundingRect.height + 8
+        // Status bar (44) + divider (1) + text padding (16) + text height + toast if present
+        var totalHeight = 44 + 1 + 16 + boundingRect.height + 8
+        if appState.toastMessage != nil {
+            totalHeight += 1 + 28 // divider + toast bar
+        }
         RecordingOverlayWindow.shared.updateHeight(totalHeight)
     }
 }

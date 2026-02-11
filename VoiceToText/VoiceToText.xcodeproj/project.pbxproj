@@ -12,6 +12,10 @@
 		15A4B8697F24CE0E6F5F4CE8 /* LLMPostProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A99AE2B47FD26238ADC398 /* LLMPostProcessor.swift */; };
 		17BD2B6135145633A4F611E5 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EF79AB81E9AD665BA6DB69 /* AppState.swift */; };
 		1C7474E00FE58EBFD3FC1DFB /* WhisperWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8806ACD361DAAB06E80CC398 /* WhisperWrapper.swift */; };
+		A1B2C3D4E5F60011A1B2C3D4 /* AudioRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60001A1B2C3D4 /* AudioRingBuffer.swift */; };
+		A1B2C3D4E5F60012A1B2C3D4 /* PipelineConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002A1B2C3D4 /* PipelineConfig.swift */; };
+		A1B2C3D4E5F60013A1B2C3D4 /* SilenceDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60003A1B2C3D4 /* SilenceDetector.swift */; };
+		A1B2C3D4E5F60014A1B2C3D4 /* TranscriptStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60004A1B2C3D4 /* TranscriptStabilizer.swift */; };
 		216BA3A3116A2ACB0A271FBD /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 9E985C96E19C88027A047D1C /* MLXLMCommon */; };
 		223AE1750176013D9E09333B /* LocalLLMManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993D827F28157515165A6533 /* LocalLLMManager.swift */; };
 		27B803202BF6E7623675C0D0 /* TranscriptionPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */; };
@@ -49,6 +53,10 @@
 		A392263026089454CDC5D7CE /* ClipboardPaster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardPaster.swift; sourceTree = "<group>"; };
 		A3EF79AB81E9AD665BA6DB69 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A4F7EC7F14C4AD91CF2AC66C /* WhisperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperManager.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60001A1B2C3D4 /* AudioRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBuffer.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60002A1B2C3D4 /* PipelineConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineConfig.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60003A1B2C3D4 /* SilenceDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetector.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60004A1B2C3D4 /* TranscriptStabilizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStabilizer.swift; sourceTree = "<group>"; };
 		B62DB46954DCFEB950E01723 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipeline.swift; sourceTree = "<group>"; };
 		C4F471C22FA4A9B9913C20D5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -76,6 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				B62DB46954DCFEB950E01723 /* AudioRecorder.swift */,
+				A1B2C3D4E5F60001A1B2C3D4 /* AudioRingBuffer.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -84,7 +93,10 @@
 			isa = PBXGroup;
 			children = (
 				068019CBCC6F6BDD8F39DE15 /* ModelManager.swift */,
+				A1B2C3D4E5F60002A1B2C3D4 /* PipelineConfig.swift */,
+				A1B2C3D4E5F60003A1B2C3D4 /* SilenceDetector.swift */,
 				BC0023EFC424B238E04719EA /* TranscriptionPipeline.swift */,
+				A1B2C3D4E5F60004A1B2C3D4 /* TranscriptStabilizer.swift */,
 				A4F7EC7F14C4AD91CF2AC66C /* WhisperManager.swift */,
 				8806ACD361DAAB06E80CC398 /* WhisperWrapper.swift */,
 			);
@@ -283,6 +295,10 @@
 				DB26F5D385DE9E15585D2E69 /* VoiceToTextApp.swift in Sources */,
 				9724274485CC382DBF536DE7 /* WhisperManager.swift in Sources */,
 				1C7474E00FE58EBFD3FC1DFB /* WhisperWrapper.swift in Sources */,
+				A1B2C3D4E5F60011A1B2C3D4 /* AudioRingBuffer.swift in Sources */,
+				A1B2C3D4E5F60012A1B2C3D4 /* PipelineConfig.swift in Sources */,
+				A1B2C3D4E5F60013A1B2C3D4 /* SilenceDetector.swift in Sources */,
+				A1B2C3D4E5F60014A1B2C3D4 /* TranscriptStabilizer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
