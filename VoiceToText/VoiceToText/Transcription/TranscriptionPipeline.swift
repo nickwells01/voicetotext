@@ -24,7 +24,6 @@ final class TranscriptionPipeline: ObservableObject {
 
     // MARK: - Pipeline Components
 
-    private var config = PipelineConfig.load()
     private let stabilizer = TranscriptStabilizer()
     private let silenceDetector = SilenceDetector()
     private let fillerWordFilter = FillerWordFilter()
@@ -61,11 +60,10 @@ final class TranscriptionPipeline: ObservableObject {
 
         // Pre-load local LLM if configured
         Task {
-            let llmConfig = LLMConfig.load()
-            if llmConfig.isEnabled && llmConfig.provider == .local {
+            if appState.llmConfig.isEnabled && appState.llmConfig.provider == .local {
                 await LocalLLMManager.shared.prepareModel(
-                    modelId: llmConfig.localModelId,
-                    systemPrompt: llmConfig.systemPrompt
+                    modelId: appState.llmConfig.localModelId,
+                    systemPrompt: appState.llmConfig.systemPrompt
                 )
             }
         }
@@ -116,7 +114,7 @@ final class TranscriptionPipeline: ObservableObject {
         burstScheduler.reset()
         isDecoding = false
         needsRedecode = false
-        var llmConfig = LLMConfig.load()
+        var llmConfig = appState.llmConfig
         // Enforce privacy mode: force local provider when privacy mode is on
         if appState.privacyMode && llmConfig.provider == .remote {
             llmConfig.provider = .local
@@ -140,11 +138,11 @@ final class TranscriptionPipeline: ObservableObject {
 
         do {
             recordingSession.onTick = { [weak self] in self?.tick() }
-            try recordingSession.start(config: config, clipboardPaster: ClipboardPaster())
+            try recordingSession.start(config: appState.pipelineConfig, clipboardPaster: ClipboardPaster())
             appState.transitionTo(.recording)
             RecordingOverlayWindow.shared.show()
             playStartSound()
-            logger.info("Recording started (sliding window mode, tick: \(self.config.tickMs)ms, window: \(self.config.windowMs)ms)")
+            logger.info("Recording started (sliding window mode, tick: \(self.appState.pipelineConfig.tickMs)ms, window: \(self.appState.pipelineConfig.windowMs)ms)")
         } catch {
             logger.error("Failed to start recording: \(error.localizedDescription)")
             appState.transitionTo(.error(error.localizedDescription))
@@ -217,7 +215,7 @@ final class TranscriptionPipeline: ObservableObject {
         let windowStartAbsMs = window.windowStartAbsMs
         let windowEndAbsMs = window.windowEndAbsMs
         let frames = window.pcm
-        let commitMarginMs = config.commitMarginMs
+        let commitMarginMs = appState.pipelineConfig.commitMarginMs
 
         Task {
             do {
@@ -357,7 +355,7 @@ final class TranscriptionPipeline: ObservableObject {
 
         let finalText = await pasteCoordinator.finalize(
             rawText: rawText,
-            llmConfig: cachedLLMConfig ?? LLMConfig.load(),
+            llmConfig: cachedLLMConfig ?? appState.llmConfig,
             targetApp: recordingSession.frontmostApp,
             appState: appState,
             customVocabulary: CustomVocabulary.load(),
@@ -398,9 +396,9 @@ final class TranscriptionPipeline: ObservableObject {
     /// boundary so the model gets coherent context rather than a fragment.
     private func buildPrompt(from committed: String) -> String? {
         guard !committed.isEmpty else { return nil }
-        guard committed.count > config.maxPromptChars else { return committed }
+        guard committed.count > appState.pipelineConfig.maxPromptChars else { return committed }
 
-        let suffix = String(committed.suffix(config.maxPromptChars))
+        let suffix = String(committed.suffix(appState.pipelineConfig.maxPromptChars))
         // Trim to the nearest sentence boundary
         if let dotRange = suffix.range(of: ". ", options: .literal) {
             return String(suffix[dotRange.upperBound...])

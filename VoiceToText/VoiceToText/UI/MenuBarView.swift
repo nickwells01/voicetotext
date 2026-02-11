@@ -104,8 +104,6 @@ struct MenuBarView: View {
         }
     }
 
-    @State private var llmConfig = LLMConfig.load()
-
     // MARK: - Config Section
 
     private var downloadedModels: [WhisperModel] {
@@ -174,26 +172,25 @@ struct MenuBarView: View {
             // AI Cleanup toggle
             configControl(icon: "sparkles", label: "AI Cleanup") {
                 HStack(spacing: 4) {
-                    if llmConfig.isEnabled && !llmConfig.isValid {
+                    if appState.llmConfig.isEnabled && !appState.llmConfig.isValid {
                         Text("(not configured)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                    } else if llmConfig.isEnabled {
-                        Text(llmConfig.provider == .local ? "MLX" : "API")
+                    } else if appState.llmConfig.isEnabled {
+                        Text(appState.llmConfig.provider == .local ? "MLX" : "API")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    Toggle("", isOn: $llmConfig.isEnabled)
+                    Toggle("", isOn: $appState.llmConfig.isEnabled)
                         .labelsHidden()
                         .controlSize(.small)
                         .toggleStyle(.switch)
-                        .onChange(of: llmConfig.isEnabled) { _ in
-                            llmConfig.save()
-                            if llmConfig.isEnabled && llmConfig.provider == .local {
+                        .onChange(of: appState.llmConfig.isEnabled) { _ in
+                            if appState.llmConfig.isEnabled && appState.llmConfig.provider == .local {
                                 Task {
                                     await LocalLLMManager.shared.prepareModel(
-                                        modelId: llmConfig.localModelId,
-                                        systemPrompt: llmConfig.systemPrompt
+                                        modelId: appState.llmConfig.localModelId,
+                                        systemPrompt: appState.llmConfig.systemPrompt
                                     )
                                 }
                             }
@@ -202,7 +199,7 @@ struct MenuBarView: View {
             }
 
             // AI Mode preset picker (when AI cleanup is enabled)
-            if llmConfig.isEnabled {
+            if appState.llmConfig.isEnabled {
                 configControl(icon: "wand.and.stars", label: "AI Mode") {
                     Picker("", selection: Binding(
                         get: { AIModePreset.activePreset()?.id.uuidString ?? "none" },
@@ -226,9 +223,9 @@ struct MenuBarView: View {
                 }
 
                 // LLM model picker
-                if llmConfig.provider == .local {
+                if appState.llmConfig.provider == .local {
                     configControl(icon: "brain", label: "LLM Model") {
-                        Picker("", selection: $llmConfig.localModelId) {
+                        Picker("", selection: $appState.llmConfig.localModelId) {
                             ForEach(LocalLLMModel.curatedModels) { model in
                                 Text(model.displayName).tag(model.id)
                             }
@@ -236,19 +233,18 @@ struct MenuBarView: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                         .controlSize(.small)
-                        .onChange(of: llmConfig.localModelId) { _ in
-                            llmConfig.save()
+                        .onChange(of: appState.llmConfig.localModelId) { _ in
                             Task {
                                 await LocalLLMManager.shared.prepareModel(
-                                    modelId: llmConfig.localModelId,
-                                    systemPrompt: llmConfig.systemPrompt
+                                    modelId: appState.llmConfig.localModelId,
+                                    systemPrompt: appState.llmConfig.systemPrompt
                                 )
                             }
                         }
                     }
                 } else {
                     configControl(icon: "brain", label: "LLM Model") {
-                        Text(llmConfig.modelName)
+                        Text(appState.llmConfig.modelName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

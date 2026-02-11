@@ -62,6 +62,16 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.appContextEnabled) var appContextEnabled: Bool = true
     @AppStorage(StorageKey.preferDirectInsertion) var preferDirectInsertion: Bool = true
 
+    // MARK: - Complex Settings (auto-saved on mutation)
+
+    @Published var llmConfig: LLMConfig = LLMConfig.load() {
+        didSet { llmConfig.save() }
+    }
+
+    @Published var pipelineConfig: PipelineConfig = PipelineConfig.load() {
+        didSet { pipelineConfig.save() }
+    }
+
     // MARK: - Computed Settings
 
     var currentActivationMode: ActivationMode {

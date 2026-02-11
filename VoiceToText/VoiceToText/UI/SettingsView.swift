@@ -338,7 +338,6 @@ private struct ModelRow: View {
 
 private struct AICleanupTab: View {
     @EnvironmentObject private var appState: AppState
-    @State private var config = LLMConfig.load()
     @State private var testResult: TestResult = .none
     @StateObject private var localLLM = LocalLLMManager.shared
 
@@ -367,29 +366,27 @@ private struct AICleanupTab: View {
     var body: some View {
         Form {
             Section("LLM Post-Processing") {
-                Toggle("Enable AI Cleanup", isOn: $config.isEnabled)
-                    .onChange(of: config.isEnabled) { _ in
-                        config.save()
-                        if config.isEnabled { loadLocalModelIfNeeded() }
+                Toggle("Enable AI Cleanup", isOn: $appState.llmConfig.isEnabled)
+                    .onChange(of: appState.llmConfig.isEnabled) { _ in
+                        if appState.llmConfig.isEnabled { loadLocalModelIfNeeded() }
                     }
 
-                Picker("Provider", selection: $config.provider) {
+                Picker("Provider", selection: $appState.llmConfig.provider) {
                     ForEach(LLMProvider.allCases) { provider in
                         Text(provider.displayName).tag(provider)
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: config.provider) { _ in
+                .onChange(of: appState.llmConfig.provider) { _ in
                     testResult = .none
-                    config.save()
-                    if config.isEnabled && config.provider == .local {
+                    if appState.llmConfig.isEnabled && appState.llmConfig.provider == .local {
                         Task {
-                            await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                            await localLLM.prepareModel(modelId: appState.llmConfig.localModelId, systemPrompt: appState.llmConfig.systemPrompt)
                         }
                     }
                 }
 
-                if config.isEnabled {
+                if appState.llmConfig.isEnabled {
                     Toggle("Context-Aware Prompts", isOn: $appState.appContextEnabled)
                     Text("Adjusts AI prompts based on the active app (email, code editor, etc.)")
                         .font(.caption)
@@ -397,13 +394,13 @@ private struct AICleanupTab: View {
                 }
             }
 
-            if config.provider == .remote {
+            if appState.llmConfig.provider == .remote {
                 remoteSection
             } else {
                 localSection
             }
 
-            if config.isEnabled {
+            if appState.llmConfig.isEnabled {
                 Section("AI Mode") {
                     HStack {
                         Picker("Preset", selection: $selectedPresetId) {
@@ -415,8 +412,7 @@ private struct AICleanupTab: View {
                         }
                         .onChange(of: selectedPresetId) { newId in
                             if let id = newId, let preset = allPresets.first(where: { $0.id == id }) {
-                                config.systemPrompt = preset.systemPrompt
-                                config.save()
+                                appState.llmConfig.systemPrompt = preset.systemPrompt
                             }
                             AIModePreset.setActivePreset(allPresets.first { $0.id == newId })
                         }
@@ -451,13 +447,12 @@ private struct AICleanupTab: View {
             }
 
             Section("System Prompt") {
-                TextEditor(text: $config.systemPrompt)
+                TextEditor(text: $appState.llmConfig.systemPrompt)
                     .font(.system(.body, design: .monospaced))
                     .frame(height: 80)
-                    .onChange(of: config.systemPrompt) { _ in config.save() }
             }
 
-            if config.isEnabled {
+            if appState.llmConfig.isEnabled {
                 Section("Custom Vocabulary") {
                     Text("Words the AI should preserve exactly as spelled (product names, acronyms)")
                         .font(.caption)
@@ -492,10 +487,10 @@ private struct AICleanupTab: View {
 
             Section {
                 HStack {
-                    Button(config.provider == .remote ? "Test Connection" : "Test Inference") {
+                    Button(appState.llmConfig.provider == .remote ? "Test Connection" : "Test Inference") {
                         runTest()
                     }
-                    .disabled(!config.isValid || testResult == .testing || (config.provider == .local && !localLLM.state.isReady))
+                    .disabled(!appState.llmConfig.isValid || testResult == .testing || (appState.llmConfig.provider == .local && !localLLM.state.isReady))
 
                     Spacer()
 
@@ -506,7 +501,7 @@ private struct AICleanupTab: View {
                         ProgressView()
                             .controlSize(.small)
                     case .success:
-                        Label(config.provider == .remote ? "Connected" : "Passed", systemImage: "checkmark.circle.fill")
+                        Label(appState.llmConfig.provider == .remote ? "Connected" : "Passed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     case .failure:
                         Label("Failed", systemImage: "xmark.circle.fill")
@@ -517,23 +512,30 @@ private struct AICleanupTab: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            vocabulary = CustomVocabulary.load()
+            customPresets = AIModePreset.loadCustomPresets()
+            if let idString = UserDefaults.standard.string(forKey: StorageKey.activeAIModePresetId),
+               let id = UUID(uuidString: idString) {
+                selectedPresetId = id
+            } else {
+                selectedPresetId = nil
+            }
+        }
     }
 
     // MARK: - Remote Section
 
     private var remoteSection: some View {
         Section("API Configuration") {
-            TextField("API URL", text: $config.apiURL)
+            TextField("API URL", text: $appState.llmConfig.apiURL)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: config.apiURL) { _ in config.save() }
 
-            SecureField("API Key", text: $config.apiKey)
+            SecureField("API Key", text: $appState.llmConfig.apiKey)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: config.apiKey) { _ in config.save() }
 
-            TextField("Model Name", text: $config.modelName)
+            TextField("Model Name", text: $appState.llmConfig.modelName)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: config.modelName) { _ in config.save() }
         }
     }
 
@@ -541,26 +543,23 @@ private struct AICleanupTab: View {
 
     private var localSection: some View {
         Section("Local Model (MLX)") {
-            if !config.isCustomLocalModel {
-                Picker("Model", selection: $config.localModelId) {
+            if !appState.llmConfig.isCustomLocalModel {
+                Picker("Model", selection: $appState.llmConfig.localModelId) {
                     ForEach(LocalLLMModel.curatedModels) { model in
                         Text("\(model.displayName) (\(model.sizeLabel))").tag(model.id)
                     }
                 }
-                .onChange(of: config.localModelId) { _ in
-                    config.save()
+                .onChange(of: appState.llmConfig.localModelId) { _ in
                     loadLocalModelIfNeeded()
                 }
             }
 
-            Toggle("Use custom HuggingFace model", isOn: $config.isCustomLocalModel)
-                .onChange(of: config.isCustomLocalModel) { _ in config.save() }
+            Toggle("Use custom HuggingFace model", isOn: $appState.llmConfig.isCustomLocalModel)
 
-            if config.isCustomLocalModel {
-                TextField("HuggingFace Model ID", text: $config.localModelId)
+            if appState.llmConfig.isCustomLocalModel {
+                TextField("HuggingFace Model ID", text: $appState.llmConfig.localModelId)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit { config.save(); loadLocalModelIfNeeded() }
-                    .onChange(of: config.localModelId) { _ in config.save() }
+                    .onSubmit { loadLocalModelIfNeeded() }
                 Text("e.g. mlx-community/Qwen2.5-3B-Instruct-4bit — press Return to load")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -577,10 +576,10 @@ private struct AICleanupTab: View {
         case .unloaded:
             Button("Download & Load") {
                 Task {
-                    await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                    await localLLM.prepareModel(modelId: appState.llmConfig.localModelId, systemPrompt: appState.llmConfig.systemPrompt)
                 }
             }
-            .disabled(config.localModelId.isEmpty)
+            .disabled(appState.llmConfig.localModelId.isEmpty)
 
         case .downloading(let progress):
             HStack(spacing: 8) {
@@ -629,7 +628,7 @@ private struct AICleanupTab: View {
                     .lineLimit(2)
                 Button("Retry") {
                     Task {
-                        await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                        await localLLM.prepareModel(modelId: appState.llmConfig.localModelId, systemPrompt: appState.llmConfig.systemPrompt)
                     }
                 }
                 .controlSize(.small)
@@ -651,7 +650,7 @@ private struct AICleanupTab: View {
     private func saveNewPreset() {
         let name = newPresetName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
-        let preset = AIModePreset(name: name, systemPrompt: config.systemPrompt)
+        let preset = AIModePreset(name: name, systemPrompt: appState.llmConfig.systemPrompt)
         customPresets.append(preset)
         AIModePreset.saveCustomPresets(customPresets)
         selectedPresetId = preset.id
@@ -682,10 +681,10 @@ private struct AICleanupTab: View {
     // MARK: - Load Local Model
 
     private func loadLocalModelIfNeeded() {
-        guard config.isEnabled, config.provider == .local, !config.localModelId.isEmpty else { return }
-        if localLLM.currentModelId != config.localModelId || !localLLM.state.isReady {
+        guard appState.llmConfig.isEnabled, appState.llmConfig.provider == .local, !appState.llmConfig.localModelId.isEmpty else { return }
+        if localLLM.currentModelId != appState.llmConfig.localModelId || !localLLM.state.isReady {
             Task {
-                await localLLM.prepareModel(modelId: config.localModelId, systemPrompt: config.systemPrompt)
+                await localLLM.prepareModel(modelId: appState.llmConfig.localModelId, systemPrompt: appState.llmConfig.systemPrompt)
             }
         }
     }
@@ -694,7 +693,7 @@ private struct AICleanupTab: View {
 
     private func runTest() {
         testResult = .testing
-        let processor = LLMPostProcessor(config: config)
+        let processor = LLMPostProcessor(config: appState.llmConfig)
         Task {
             let success = await processor.testConnection()
             testResult = success ? .success : .failure
@@ -705,7 +704,7 @@ private struct AICleanupTab: View {
 // MARK: - Advanced Tab
 
 private struct AdvancedTab: View {
-    @State private var pipelineConfig = PipelineConfig.load()
+    @EnvironmentObject private var appState: AppState
 
     var body: some View {
         Form {
@@ -719,7 +718,7 @@ private struct AdvancedTab: View {
                     Slider(value: windowMsBinding, in: 4000...12000, step: 1000) {
                         Text("Window")
                     }
-                    Text("\(pipelineConfig.windowMs / 1000)s")
+                    Text("\(appState.pipelineConfig.windowMs / 1000)s")
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -731,7 +730,7 @@ private struct AdvancedTab: View {
                     Slider(value: commitMarginBinding, in: 400...1200, step: 50) {
                         Text("Margin")
                     }
-                    Text("\(pipelineConfig.commitMarginMs)ms")
+                    Text("\(appState.pipelineConfig.commitMarginMs)ms")
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -743,7 +742,7 @@ private struct AdvancedTab: View {
                     Slider(value: tickMsBinding, in: 150...500, step: 50) {
                         Text("Tick")
                     }
-                    Text("\(pipelineConfig.tickMs)ms")
+                    Text("\(appState.pipelineConfig.tickMs)ms")
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -755,7 +754,7 @@ private struct AdvancedTab: View {
                     Slider(value: silenceMsBinding, in: 500...2000, step: 100) {
                         Text("Silence")
                     }
-                    Text("\(pipelineConfig.silenceMs)ms")
+                    Text("\(appState.pipelineConfig.silenceMs)ms")
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -765,8 +764,7 @@ private struct AdvancedTab: View {
 
             Section {
                 Button("Reset to Defaults") {
-                    pipelineConfig = PipelineConfig()
-                    pipelineConfig.save()
+                    appState.pipelineConfig = PipelineConfig()
                 }
             }
         }
@@ -777,29 +775,29 @@ private struct AdvancedTab: View {
     // Bindings that save on change
     private var windowMsBinding: Binding<Double> {
         Binding(
-            get: { Double(pipelineConfig.windowMs) },
-            set: { pipelineConfig.windowMs = Int($0); pipelineConfig.save() }
+            get: { Double(appState.pipelineConfig.windowMs) },
+            set: { appState.pipelineConfig.windowMs = Int($0) }
         )
     }
 
     private var commitMarginBinding: Binding<Double> {
         Binding(
-            get: { Double(pipelineConfig.commitMarginMs) },
-            set: { pipelineConfig.commitMarginMs = Int($0); pipelineConfig.save() }
+            get: { Double(appState.pipelineConfig.commitMarginMs) },
+            set: { appState.pipelineConfig.commitMarginMs = Int($0) }
         )
     }
 
     private var tickMsBinding: Binding<Double> {
         Binding(
-            get: { Double(pipelineConfig.tickMs) },
-            set: { pipelineConfig.tickMs = Int($0); pipelineConfig.save() }
+            get: { Double(appState.pipelineConfig.tickMs) },
+            set: { appState.pipelineConfig.tickMs = Int($0) }
         )
     }
 
     private var silenceMsBinding: Binding<Double> {
         Binding(
-            get: { Double(pipelineConfig.silenceMs) },
-            set: { pipelineConfig.silenceMs = Int($0); pipelineConfig.save() }
+            get: { Double(appState.pipelineConfig.silenceMs) },
+            set: { appState.pipelineConfig.silenceMs = Int($0) }
         )
     }
 }
