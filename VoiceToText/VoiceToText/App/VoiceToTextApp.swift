@@ -23,14 +23,23 @@ struct VoiceToTextApp: App {
                     #if DEBUG
                     if CommandLine.arguments.contains("--test-harness") {
                         Task {
-                            // Wait for model to finish loading
-                            print("[TestHarness] Waiting for model to load...")
-                            while !pipeline.isModelReady {
+                            func log(_ msg: String) {
+                                FileHandle.standardError.write(Data("[TestHarness] \(msg)\n".utf8))
+                            }
+                            // Wait for model to finish loading (30s timeout)
+                            log("Waiting for model to load...")
+                            let deadline = Date().addingTimeInterval(30)
+                            while !pipeline.isModelReady && Date() < deadline {
                                 try? await Task.sleep(nanoseconds: 200_000_000)
                             }
-                            print("[TestHarness] Model ready, launching harness")
+                            guard pipeline.isModelReady else {
+                                log("TIMEOUT: Model never became ready after 30s")
+                                NSApp.terminate(nil)
+                                return
+                            }
+                            log("Model ready, launching harness")
                             await pipeline.runTestHarness()
-                            print("[TestHarness] Harness complete, terminating")
+                            log("Harness complete, terminating")
                             NSApp.terminate(nil)
                         }
                     }

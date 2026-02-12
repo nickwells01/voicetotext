@@ -216,6 +216,17 @@ final class TranscriptionTestHarness {
             }
 
             // --- Whisper decode: sliding window (last maxBufferMs of audio) ---
+            // Skip decode until we have at least 1s of audio. Whisper requires
+            // >= 1000ms input; shorter audio triggers Metal graph reallocations
+            // that can corrupt the ggml allocator (node_27 invalid crash).
+            let minSamples = sampleRate  // 1 second
+            if fullAudioSamples.count < minSamples {
+                let ms = (fullAudioSamples.count * 1000) / sampleRate
+                log("Tick \(tickIndex): skipping decode (\(ms)ms < 1000ms minimum)")
+                tickIndex += 1
+                continue
+            }
+
             let windowStart = max(0, fullAudioSamples.count - maxBufferSamples)
             let accPcm = Array(fullAudioSamples[windowStart...])
             let accStartMs = (windowStart * 1000) / sampleRate
