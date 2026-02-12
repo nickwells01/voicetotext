@@ -26,7 +26,8 @@ let package = Package(
         .testTarget(
             name: "VoiceToTextTests",
             dependencies: ["VoiceToText"],
-            path: "VoiceToTextTests"
+            path: "VoiceToTextTests",
+            resources: [.copy("Baselines")]
         ),
     ]
 )

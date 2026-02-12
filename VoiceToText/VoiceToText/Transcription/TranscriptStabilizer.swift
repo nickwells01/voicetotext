@@ -19,6 +19,10 @@ struct TranscriptState {
         rawSpeculative.isEmpty ? rawCommitted
             : rawCommitted + (rawCommitted.isEmpty ? "" : " ") + rawSpeculative
     }
+
+    var committedWordCount: Int {
+        rawCommitted.split(separator: " ", omittingEmptySubsequences: true).count
+    }
 }
 
 // MARK: - Transcript Stabilizer

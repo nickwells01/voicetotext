@@ -21,6 +21,12 @@ final class TranscriptionHistoryStore: ObservableObject {
         loadFromDisk()
     }
 
+    /// Testing-only initializer with a custom file URL to avoid polluting real history.
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+        loadFromDisk()
+    }
+
     // MARK: - Add Record
 
     func addRecord(_ record: TranscriptionRecord) {

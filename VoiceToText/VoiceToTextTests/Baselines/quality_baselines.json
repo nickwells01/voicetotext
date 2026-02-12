@@ -1,0 +1,18 @@
+{
+  "short_tts": {
+    "model": "ggml-base.en-q5_1",
+    "streaming_wer": 0.067,
+    "full_wer": 0.0,
+    "flicker_count": 3,
+    "avg_latency_ms": 124,
+    "ttfw_ms": 1500
+  },
+  "long_tts": {
+    "model": "ggml-base.en-q5_1",
+    "streaming_wer": 0.239,
+    "full_wer": 0.0,
+    "flicker_count": 35,
+    "avg_latency_ms": 343,
+    "ttfw_ms": 1500
+  }
+}
