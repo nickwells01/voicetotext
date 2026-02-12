@@ -54,7 +54,9 @@ final class TranscriptionTestHarness {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "TestHarness")
 
     private func log(_ message: String) {
-        print("[TestHarness] \(message)")
+        // Write to stderr (always unbuffered) to avoid stdout pipe buffering issues
+        let line = "[TestHarness] \(message)\n"
+        FileHandle.standardError.write(Data(line.utf8))
         logger.notice("\(message)")
     }
 
@@ -151,9 +153,20 @@ final class TranscriptionTestHarness {
 
         var tickMetricsList: [TickMetrics] = []
         var fullAudioSamples: [Float] = []
-        var accTrimOffset = 0
         var previousSpeculative = ""
-        var trimEvents = 0
+        let maxBufferSamples = sampleRate * config.pipelineConfig.maxBufferMs / 1000
+
+        // Warmup: decode maxBufferSamples of silence to pre-allocate Metal graph buffers.
+        // Without this, the Metal allocator crashes after 3+ reallocations when graph
+        // sizes change due to varying token counts across decodes.
+        log("Warming up Metal graph allocator...")
+        let warmupSilence = [Float](repeating: 0, count: maxBufferSamples)
+        _ = try await whisperManager.transcribeWindow(
+            frames: warmupSilence,
+            windowStartAbsMs: 0,
+            prompt: nil
+        )
+        log("Warmup complete")
 
         // Tick loop
         var tickIndex = 0
@@ -202,9 +215,10 @@ final class TranscriptionTestHarness {
                 continue
             }
 
-            // --- Whisper decode: use accumulated window (grows until trimmed) ---
-            let accPcm = Array(fullAudioSamples[accTrimOffset...])
-            let accStartMs = (accTrimOffset * 1000) / sampleRate
+            // --- Whisper decode: sliding window (last maxBufferMs of audio) ---
+            let windowStart = max(0, fullAudioSamples.count - maxBufferSamples)
+            let accPcm = Array(fullAudioSamples[windowStart...])
+            let accStartMs = (windowStart * 1000) / sampleRate
             let accEndMs = (fullAudioSamples.count * 1000) / sampleRate
 
             // Build prompt from committed text
@@ -237,15 +251,21 @@ final class TranscriptionTestHarness {
                 }
             }
             log("  Tokens: \(tokenSummary.joined(separator: " "))")
-            log("  Horizon: \(commitHorizon)ms, committedWords: \(stabilizer.state.committedWordCount)")
+            log("  Horizon: \(commitHorizon)ms")
 
-            // Update stabilizer
-            stabilizer.update(
-                decodeResult: result,
-                windowEndAbsMs: accEndMs,
-                commitMarginMs: config.pipelineConfig.commitMarginMs,
-                minTokenProbability: config.pipelineConfig.minTokenProbability
-            )
+            // Skip hallucination-stalled decodes (>4s usually means Whisper
+            // is generating garbage tokens on ambiguous audio)
+            if decodeLatencyMs > 4000 {
+                log("  SKIPPED (decode took \(String(format: "%.0f", decodeLatencyMs))ms)")
+            } else {
+                // Update stabilizer
+                stabilizer.update(
+                    decodeResult: result,
+                    windowEndAbsMs: accEndMs,
+                    commitMarginMs: config.pipelineConfig.commitMarginMs,
+                    minTokenProbability: config.pipelineConfig.minTokenProbability
+                )
+            }
 
             let metrics = TickMetrics(
                 index: tickIndex,
@@ -260,37 +280,9 @@ final class TranscriptionTestHarness {
 
             log("Tick \(tickIndex): \(String(format: "%.0f", decodeLatencyMs))ms | C: \"\(stabilizer.state.rawCommitted.suffix(60))\" | S: \"\(stabilizer.state.rawSpeculative.suffix(40))\"")
 
-            // --- Trim check ---
-            let accDurationMs = accEndMs - accStartMs
-            if accDurationMs > config.pipelineConfig.maxBufferMs {
-                let committed = stabilizer.state.rawCommitted
-                let words = committed.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
-                if words.count > 3 {
-                    // Find the first sentence boundary in the first half of committed text
-                    let midPoint = words.count / 2
-                    var sentenceBoundaryWordIndex: Int? = nil
-                    for i in 0...midPoint {
-                        let word = words[i]
-                        if word.hasSuffix(".") || word.hasSuffix("!") || word.hasSuffix("?") {
-                            sentenceBoundaryWordIndex = i
-                        }
-                    }
-                    let trimWordIndex = sentenceBoundaryWordIndex ?? (words.count * 2 / 5)
-                    if trimWordIndex > 0 {
-                        let availableSamples = fullAudioSamples.count - accTrimOffset
-                        let fraction = Double(trimWordIndex + 1) / Double(words.count)
-                        accTrimOffset = accTrimOffset + Int(fraction * Double(availableSamples))
-                        trimEvents += 1
-                        log("  TRIM at word \(trimWordIndex)/\(words.count), ~\(Int(fraction * 100))% of audio, new acc duration: \((fullAudioSamples.count - accTrimOffset) * 1000 / sampleRate)ms")
-                    }
-                }
-            }
-
             previousSpeculative = stabilizer.state.rawSpeculative
             tickIndex += 1
         }
-
-        log("Trim events: \(trimEvents)")
 
         // Finalize
         stabilizer.finalizeAll()
@@ -323,24 +315,45 @@ final class TranscriptionTestHarness {
 
     private func detectFlicker(metrics: [TickMetrics]) -> [Int] {
         var flickerIndices: [Int] = []
+        var prevCommitted = ""
 
         for i in 0..<metrics.count {
             let m = metrics[i]
-            guard !m.previousSpeculative.isEmpty else { continue }
+            guard !m.previousSpeculative.isEmpty else {
+                prevCommitted = m.committed
+                continue
+            }
 
-            // Check if previous speculative text was replaced (not found in current full text).
-            // Use case-insensitive comparison and strip trailing punctuation since Whisper
-            // varies case and punctuation across decodes — these aren't real visual flicker.
-            let currentFull = m.committed + (m.speculative.isEmpty ? "" : " " + m.speculative)
-            let normalized = currentFull.trimmingCharacters(in: .whitespaces).lowercased()
             let prevNormalized = m.previousSpeculative
                 .trimmingCharacters(in: .whitespaces)
                 .trimmingCharacters(in: .punctuationCharacters)
                 .lowercased()
+            guard !prevNormalized.isEmpty else {
+                prevCommitted = m.committed
+                continue
+            }
 
-            if !normalized.contains(prevNormalized) && !prevNormalized.isEmpty {
+            // If committed text grew, check if the previous speculative was absorbed
+            // into the new committed text. This is normal forward progress, not flicker.
+            let committedGrew = m.committed.count > prevCommitted.count
+            if committedGrew {
+                let newCommittedNorm = m.committed.lowercased()
+                if newCommittedNorm.contains(prevNormalized) {
+                    // Speculative text was absorbed into committed — forward progress, not flicker
+                    prevCommitted = m.committed
+                    continue
+                }
+            }
+
+            // Check if previous speculative text was replaced (not found in current full text)
+            let currentFull = m.committed + (m.speculative.isEmpty ? "" : " " + m.speculative)
+            let normalized = currentFull.trimmingCharacters(in: .whitespaces).lowercased()
+
+            if !normalized.contains(prevNormalized) {
                 flickerIndices.append(m.index)
             }
+
+            prevCommitted = m.committed
         }
 
         return flickerIndices
@@ -360,6 +373,32 @@ final class TranscriptionTestHarness {
             return String(suffix[spaceRange.upperBound...])
         }
         return suffix
+    }
+
+    // MARK: - WER Calculation
+
+    /// Compute word error rate using Levenshtein distance on normalized word arrays.
+    private func wordErrorRate(reference: String, hypothesis: String) -> Double {
+        let ref = reference.lowercased().split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+        let hyp = hypothesis.lowercased().split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+        guard !ref.isEmpty else { return hyp.isEmpty ? 0.0 : 1.0 }
+
+        // Levenshtein distance on word arrays
+        var dp = Array(0...hyp.count)
+        for i in 1...ref.count {
+            var prev = dp[0]
+            dp[0] = i
+            for j in 1...hyp.count {
+                let temp = dp[j]
+                if ref[i - 1] == hyp[j - 1] {
+                    dp[j] = prev
+                } else {
+                    dp[j] = min(prev, dp[j], dp[j - 1]) + 1
+                }
+                prev = temp
+            }
+        }
+        return Double(dp[hyp.count]) / Double(ref.count)
     }
 
     // MARK: - Report
@@ -407,6 +446,11 @@ final class TranscriptionTestHarness {
         log("Decode latency: avg \(String(format: "%.0f", avgLatency))ms, max \(String(format: "%.0f", maxLatency))ms")
         log("Time to first word: \(timeToFirstWord)ms")
         log("Flicker events: \(report.flickerEvents.count)")
+
+        let streamingWER = wordErrorRate(reference: report.referenceText, hypothesis: report.streamingResult)
+        let fullDecodeWER = wordErrorRate(reference: report.referenceText, hypothesis: report.fullDecodeResult)
+        log("Streaming WER: \(String(format: "%.1f", streamingWER * 100))%")
+        log("Full decode WER: \(String(format: "%.1f", fullDecodeWER * 100))%")
 
         log("")
         log("Streaming result: \(report.streamingResult)")

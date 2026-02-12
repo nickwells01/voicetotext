@@ -7,9 +7,11 @@ extension TranscriptionPipeline {
         let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "TestHarness")
 
         guard isModelReady else {
+            print("[TestHarness] ERROR: no model loaded")
             logger.error("Cannot run test harness: no model loaded")
             return
         }
+        print("[TestHarness] runTestHarness() starting")
 
         let phrase: String
         if CommandLine.arguments.contains("--long") {

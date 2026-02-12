@@ -11,5 +11,6 @@ DerivedData/
 .swiftpm/
 
 # Build artifacts
+build/
 *.o
 *.dSYM/

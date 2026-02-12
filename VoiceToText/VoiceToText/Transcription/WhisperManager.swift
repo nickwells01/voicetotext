@@ -39,7 +39,7 @@ actor WhisperManager {
 
     private var currentLanguage: WhisperLanguage = .english
 
-    func loadModel(url: URL, language: WhisperLanguage = .english) async throws {
+    func loadModel(url: URL, language: WhisperLanguage = .english, useGPU: Bool = true) async throws {
         logger.info("Loading Whisper model from \(url.lastPathComponent)")
 
         if whisper != nil {
@@ -52,6 +52,7 @@ actor WhisperManager {
         // Model loading is synchronous in SwiftWhisper, so run on a detached task
         // to avoid blocking the actor or the caller's executor.
         let lang = language
+        let gpu = useGPU
         let loadedWhisper = await Task.detached(priority: .userInitiated) {
             let params = WhisperParams(strategy: .greedy)
             params.language = lang
@@ -74,7 +75,7 @@ actor WhisperManager {
             params.print_realtime = false
             params.print_special = false
 
-            return Whisper(fromFileURL: url, withParams: params)
+            return Whisper(fromFileURL: url, withParams: params, useGPU: gpu)
         }.value
 
         guard let loadedWhisper else {
@@ -182,10 +183,16 @@ actor WhisperManager {
             return DecodeResult(segments: [], windowStartAbsMs: windowStartAbsMs)
         }
 
-        // Enable token-level timestamps
-        whisper.params.token_timestamps = true
-        whisper.params.thold_pt = 0.01
-        whisper.params.thold_ptsum = 0.01
+        // Enable token data (probabilities). We do NOT need token_timestamps
+        // (dtw-based timing) since the stabilizer only uses token probabilities.
+        // token_timestamps triggers whisper_exp_compute_token_level_timestamps()
+        // which has an out-of-bounds crash in certain edge cases.
+        whisper.params.token_timestamps = false
+
+        // Limit token count to prevent hallucination loops and bound decode time.
+        // 50 tokens covers ~30 words of real speech for a 12s window.
+        whisper.params.single_segment = true
+        whisper.params.max_tokens = 50
 
         // Set initial_prompt for decoder context continuity
         var promptCString: UnsafeMutablePointer<CChar>?
@@ -196,8 +203,10 @@ actor WhisperManager {
         defer {
             if promptCString != nil { free(promptCString) }
             whisper.params.initial_prompt = nil
-            // Restore token_timestamps to off for non-window callers
+            // Restore settings for non-window callers
             whisper.params.token_timestamps = false
+            whisper.params.single_segment = false
+            whisper.params.max_tokens = 0
         }
 
         let audioDuration = Double(frames.count) / 16000.0

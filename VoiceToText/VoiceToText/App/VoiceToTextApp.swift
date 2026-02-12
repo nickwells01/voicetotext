@@ -24,10 +24,13 @@ struct VoiceToTextApp: App {
                     if CommandLine.arguments.contains("--test-harness") {
                         Task {
                             // Wait for model to finish loading
+                            print("[TestHarness] Waiting for model to load...")
                             while !pipeline.isModelReady {
                                 try? await Task.sleep(nanoseconds: 200_000_000)
                             }
+                            print("[TestHarness] Model ready, launching harness")
                             await pipeline.runTestHarness()
+                            print("[TestHarness] Harness complete, terminating")
                             NSApp.terminate(nil)
                         }
                     }

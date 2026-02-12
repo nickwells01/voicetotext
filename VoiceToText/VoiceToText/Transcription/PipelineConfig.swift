@@ -10,7 +10,7 @@ struct PipelineConfig: Codable, Equatable {
     var maxPromptChars: Int = 1200
     var silenceMs: Int = 900
     var noSpeechThreshold: Float = 0.75
-    var minTokenProbability: Float = 0.25
+    var minTokenProbability: Float = 0.10
     var maxSessionMinutes: Int = 30
 
     var windowSamples: Int { sampleRate * windowMs / 1000 }
@@ -22,7 +22,7 @@ struct PipelineConfig: Codable, Equatable {
     var minWindowMs: Int = 4000
 
     // Accumulate-and-trim: max accumulated audio before trimming at sentence boundary
-    var maxBufferMs: Int = 20000
+    var maxBufferMs: Int = 12000
 
     // MARK: - Persistence
 

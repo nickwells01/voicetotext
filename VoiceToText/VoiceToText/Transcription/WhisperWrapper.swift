@@ -156,9 +156,9 @@ class Whisper {
     var params: WhisperParams
     private var inProgress = false
 
-    init?(fromFileURL fileURL: URL, withParams params: WhisperParams = WhisperParams()) {
+    init?(fromFileURL fileURL: URL, withParams params: WhisperParams = WhisperParams(), useGPU: Bool = true) {
         var cparams = whisper_context_default_params()
-        cparams.use_gpu = true
+        cparams.use_gpu = useGPU
         guard let ctx = fileURL.path.withCString({ whisper_init_from_file_with_params($0, cparams) }) else {
             return nil
         }
@@ -202,7 +202,7 @@ class Whisper {
         }
     }
 
-    /// Transcribe with token-level timestamps for sliding window pipeline.
+    /// Transcribe with token-level data for sliding window pipeline.
     func transcribeWithTokens(audioFrames: [Float]) async throws -> [TranscriptionSegment] {
         guard !inProgress else { throw WhisperError.instanceBusy }
         guard !audioFrames.isEmpty else { throw WhisperError.invalidFrames }

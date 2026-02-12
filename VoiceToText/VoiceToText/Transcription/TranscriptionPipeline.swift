@@ -284,10 +284,16 @@ final class TranscriptionPipeline: ObservableObject {
         let totalSamples = recordingSession.audioRecorder.totalSamplesRecorded
         let accTrimOffset = recordingSession.audioRecorder.currentTrimOffset
         let availableSamples = totalSamples - accTrimOffset
-        let fraction = Double(trimWordIndex + 1) / Double(words.count)
+        let fraction = Double(trimWordIndex) / Double(words.count)
         let trimSampleOffset = accTrimOffset + Int(fraction * Double(availableSamples))
 
+        // Safety: don't trim if it would leave less than 3s of audio
+        let remainingSamples = totalSamples - trimSampleOffset
+        let remainingMs = (remainingSamples * 1000) / config.sampleRate
+        guard remainingMs >= 3000 else { return }
+
         recordingSession.audioRecorder.trimAccumulated(toSampleOffset: trimSampleOffset)
+        stabilizer.notifyTrimmed()
         logger.info("Trimmed audio buffer at word \(trimWordIndex)/\(words.count), ~\(Int(fraction * 100))% of audio, new duration: \(self.recordingSession.audioRecorder.accumulatedDurationMs)ms")
     }
 
