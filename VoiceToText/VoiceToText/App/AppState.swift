@@ -108,7 +108,6 @@ final class AppState: ObservableObject {
     func resetStreamingText() {
         committedText = ""
         speculativeText = ""
-        toastMessage = nil
     }
 
     // MARK: - State Transitions

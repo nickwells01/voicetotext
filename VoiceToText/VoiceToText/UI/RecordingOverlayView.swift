@@ -6,6 +6,7 @@ struct RecordingOverlayView: View {
 
     @State private var isPulsing = false
     @State private var cursorVisible = true
+    @State private var cursorBlinkTimer: Timer?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -156,6 +157,7 @@ struct RecordingOverlayView: View {
         .lineSpacing(3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { startCursorBlink() }
+        .onDisappear { cursorBlinkTimer?.invalidate(); cursorBlinkTimer = nil }
     }
 
     // MARK: - Toast Bar
@@ -177,7 +179,8 @@ struct RecordingOverlayView: View {
     // MARK: - Cursor Blink
 
     private func startCursorBlink() {
-        Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
+        cursorBlinkTimer?.invalidate()
+        cursorBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
             Task { @MainActor in
                 cursorVisible.toggle()
             }

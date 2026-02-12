@@ -80,7 +80,10 @@ struct MenuBarView: View {
 
     private var statusColor: Color {
         switch appState.recordingState {
-        case .idle: return .green
+        case .idle:
+            if pipeline.isModelLoading { return .orange }
+            if !pipeline.isModelReady { return .yellow }
+            return .green
         case .recording: return .red
         case .transcribing, .processing: return .orange
         case .error: return .red
@@ -90,6 +93,8 @@ struct MenuBarView: View {
     private var statusText: String {
         switch appState.recordingState {
         case .idle:
+            if pipeline.isModelLoading { return "Loading model..." }
+            if !pipeline.isModelReady { return "Model not loaded" }
             return "Ready"
         case .recording:
             let mins = Int(appState.recordingDuration) / 60
@@ -316,7 +321,7 @@ struct MenuBarView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(appState.recordingState == .recording ? .red : .accentColor)
-        .disabled(appState.recordingState == .transcribing || appState.recordingState == .processing)
+        .disabled(appState.recordingState == .transcribing || appState.recordingState == .processing || pipeline.isModelLoading || !pipeline.isModelReady)
     }
 
     // MARK: - Footer

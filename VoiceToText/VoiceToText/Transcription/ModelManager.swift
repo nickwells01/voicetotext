@@ -97,6 +97,7 @@ final class ModelManager: ObservableObject {
     @Published var fastDownloadProgress: [String: Double] = [:]
     @Published var isFastDownloading: [String: Bool] = [:]
 
+    private var activeTasks: [String: URLSessionDownloadTask] = [:]
     private let fileManager = FileManager.default
 
     // MARK: - Directory Setup
@@ -176,8 +177,10 @@ final class ModelManager: ObservableObject {
                 delegateQueue: nil
             )
             let task = session.downloadTask(with: model.downloadURL)
+            self.activeTasks[model.id] = task
             task.resume()
         }
+        activeTasks[model.id] = nil
 
         // Move downloaded file to final destination
         let destinationURL = modelFileURL(for: model)
@@ -217,8 +220,10 @@ final class ModelManager: ObservableObject {
                 delegateQueue: nil
             )
             let task = session.downloadTask(with: model.q5DownloadURL)
+            self.activeTasks[fastKey] = task
             task.resume()
         }
+        activeTasks[fastKey] = nil
 
         let destinationURL = fastModelFileURL(for: model)
         try? fileManager.removeItem(at: destinationURL)
@@ -278,8 +283,10 @@ final class ModelManager: ObservableObject {
                 delegateQueue: nil
             )
             let task = session.downloadTask(with: coreMLURL)
+            self.activeTasks[coreMLKey] = task
             task.resume()
         }
+        activeTasks[coreMLKey] = nil
 
         // Extract zip to models directory
         let destinationURL = coreMLEncoderURL(for: model)
@@ -320,6 +327,22 @@ final class ModelManager: ObservableObject {
         guard fileManager.fileExists(atPath: url.path) else { return }
         try fileManager.removeItem(at: url)
         logger.info("Deleted CoreML model for \(model.id)")
+    }
+
+    // MARK: - Cancel Download
+
+    func cancelDownload(key: String) {
+        activeTasks[key]?.cancel()
+        activeTasks[key] = nil
+        isDownloading[key] = false
+        downloadProgress[key] = nil
+        let fastKey = "\(key)-fast"
+        isFastDownloading[fastKey] = false
+        fastDownloadProgress[fastKey] = nil
+        let coreMLKey = "\(key)-coreml"
+        isCoreMLDownloading[coreMLKey] = false
+        coreMLDownloadProgress[coreMLKey] = nil
+        logger.info("Cancelled download for key: \(key)")
     }
 
     // MARK: - Delete

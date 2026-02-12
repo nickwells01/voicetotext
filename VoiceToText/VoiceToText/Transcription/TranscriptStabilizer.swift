@@ -112,7 +112,8 @@ final class TranscriptStabilizer {
             }
 
             // Remove repeated phrases (hallucination safety net)
-            state.rawCommitted = removeRepeatedPhrases(state.rawCommitted)
+            // Skip O(n^2) non-consecutive scan during streaming; full scan runs in finalizeAll()
+            state.rawCommitted = removeRepeatedPhrases(state.rawCommitted, minNonConsecutivePhraseLen: 7)
             state.rawCommitted = normalizeWhitespace(state.rawCommitted)
         }
 

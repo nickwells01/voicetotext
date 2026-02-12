@@ -48,6 +48,7 @@
 		B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */; };
 		C1A2B3D4E5F60011C1A2B3D4 /* TranscriptionTestHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */; };
 		C1A2B3D4E5F60012C1A2B3D4 /* TestHarnessMenuExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */; };
+		D1A2B3C4E5F60020D1A2B3C4 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -88,6 +89,7 @@
 		B1A2C3D4E5F6000FB1A2C3D4 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTestHarness.swift; sourceTree = "<group>"; };
 		C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessMenuExtension.swift; sourceTree = "<group>"; };
+		D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,6 +185,7 @@
 				B1A2C3D4E5F60009B1A2C3D4 /* AIModePreset.swift */,
 				B1A2C3D4E5F6000AB1A2C3D4 /* AppContextDetector.swift */,
 				B1A2C3D4E5F6000BB1A2C3D4 /* CustomVocabulary.swift */,
+				D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */,
 				B1A2C3D4E5F6000CB1A2C3D4 /* TranscriptionRecord.swift */,
 				B1A2C3D4E5F6000DB1A2C3D4 /* TranscriptionHistoryStore.swift */,
 			);
@@ -359,6 +362,7 @@
 				B1A2C3D4E5F6001FB1A2C3D4 /* HistoryView.swift in Sources */,
 				C1A2B3D4E5F60011C1A2B3D4 /* TranscriptionTestHarness.swift in Sources */,
 				C1A2B3D4E5F60012C1A2B3D4 /* TestHarnessMenuExtension.swift in Sources */,
+				D1A2B3C4E5F60020D1A2B3C4 /* KeychainHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

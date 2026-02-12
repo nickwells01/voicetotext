@@ -199,6 +199,8 @@ private struct ModelTab: View {
                         }
                     } onCoreMLDelete: {
                         try? modelManager.deleteCoreMLModel(model)
+                    } onCancelDownload: {
+                        modelManager.cancelDownload(key: model.id)
                     }
                 }
             }
@@ -226,6 +228,7 @@ private struct ModelRow: View {
     let onFastDelete: () -> Void
     let onCoreMLDownload: () -> Void
     let onCoreMLDelete: () -> Void
+    let onCancelDownload: () -> Void
 
     var body: some View {
         HStack {
@@ -270,8 +273,9 @@ private struct ModelRow: View {
 
             Spacer()
 
-            if isDownloading || isFastDownloading {
-                EmptyView()
+            if isDownloading || isFastDownloading || isCoreMLDownloading {
+                Button("Cancel") { onCancelDownload() }
+                    .controlSize(.small)
             } else if isDownloaded {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: 8) {

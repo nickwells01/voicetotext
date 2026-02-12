@@ -225,6 +225,8 @@ struct LocalLLMModel: Identifiable, Equatable {
 // MARK: - LLM Configuration
 
 struct LLMConfig: Codable, Equatable {
+    private static let keychainAccount = "llm-api-key"
+
     var apiURL: String = "https://api.openai.com"
     var apiKey: String = ""
     var modelName: String = "gpt-4o-mini"
@@ -233,6 +235,11 @@ struct LLMConfig: Codable, Equatable {
     var provider: LLMProvider = .remote
     var localModelId: String = "mlx-community/Qwen2.5-3B-Instruct-4bit"
     var isCustomLocalModel: Bool = false
+
+    // Exclude apiKey from JSON serialization — stored in Keychain instead
+    enum CodingKeys: String, CodingKey {
+        case apiURL, modelName, isEnabled, systemPrompt, provider, localModelId, isCustomLocalModel
+    }
 
     var isValid: Bool {
         switch provider {
@@ -248,26 +255,47 @@ struct LLMConfig: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiURL = try container.decodeIfPresent(String.self, forKey: .apiURL) ?? "https://api.openai.com"
-        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? "gpt-4o-mini"
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation."
         provider = try container.decodeIfPresent(LLMProvider.self, forKey: .provider) ?? .remote
         localModelId = try container.decodeIfPresent(String.self, forKey: .localModelId) ?? "mlx-community/Qwen2.5-3B-Instruct-4bit"
         isCustomLocalModel = try container.decodeIfPresent(Bool.self, forKey: .isCustomLocalModel) ?? false
+        // apiKey is loaded separately from Keychain in load()
     }
 
     static func load() -> LLMConfig {
-        guard let data = UserDefaults.standard.data(forKey: StorageKey.llmConfigData),
-              let config = try? JSONDecoder().decode(LLMConfig.self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: StorageKey.llmConfigData) else {
             return LLMConfig()
         }
+
+        // Migrate: check if old JSON contains apiKey in plaintext
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let oldKey = json["apiKey"] as? String, !oldKey.isEmpty {
+            KeychainHelper.set(oldKey, account: keychainAccount)
+            // Re-save without apiKey in JSON
+            var cleaned = json
+            cleaned.removeValue(forKey: "apiKey")
+            if let cleanedData = try? JSONSerialization.data(withJSONObject: cleaned) {
+                UserDefaults.standard.set(cleanedData, forKey: StorageKey.llmConfigData)
+            }
+        }
+
+        guard var config = try? JSONDecoder().decode(LLMConfig.self, from: data) else {
+            return LLMConfig()
+        }
+        config.apiKey = KeychainHelper.get(account: keychainAccount) ?? ""
         return config
     }
 
     func save() {
         if let data = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(data, forKey: StorageKey.llmConfigData)
+        }
+        if apiKey.isEmpty {
+            KeychainHelper.delete(account: Self.keychainAccount)
+        } else {
+            KeychainHelper.set(apiKey, account: Self.keychainAccount)
         }
     }
 }

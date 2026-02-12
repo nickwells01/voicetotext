@@ -31,6 +31,14 @@ final class AudioRecorder {
 
     private let audioEngine = AVAudioEngine()
     private(set) var isRecording = false
+    private var configChangeObserver: NSObjectProtocol?
+    var onDeviceChanged: (() -> Void)?
+    var onMaxDurationReached: (() -> Void)?
+
+    // 60 minutes at 16kHz
+    private static let maxRecordingSamples = 60 * 60 * Int(targetSampleRate) // 57,600,000
+    private static let warningThresholdSamples = 30 * 60 * Int(targetSampleRate)
+    private var hasLoggedDurationWarning = false
 
     // Target format: 16kHz mono Float32
     private static let targetSampleRate: Double = 16000.0
@@ -101,6 +109,7 @@ final class AudioRecorder {
         self.ringBuffer = ringBuffer
         self.fullAudioSamples = []
         self.accTrimOffset = 0
+        self.hasLoggedDurationWarning = false
 
         let inputNode = audioEngine.inputNode
 
@@ -130,6 +139,17 @@ final class AudioRecorder {
 
         do {
             try audioEngine.start()
+            configChangeObserver = NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: audioEngine,
+                queue: nil
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRecording else { return }
+                    self.logger.warning("Audio device configuration changed during recording")
+                    self.onDeviceChanged?()
+                }
+            }
             logger.info("Audio capture started")
         } catch {
             inputNode.removeTap(onBus: 0)
@@ -147,6 +167,10 @@ final class AudioRecorder {
             return
         }
 
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isRecording = false
@@ -208,8 +232,16 @@ final class AudioRecorder {
                                                  count: Int(outputBuffer.frameLength)))
 
         Task { @MainActor [weak self] in
-            self?.ringBuffer?.append(samples: samples)
-            self?.fullAudioSamples.append(contentsOf: samples)
+            guard let self else { return }
+            self.ringBuffer?.append(samples: samples)
+            self.fullAudioSamples.append(contentsOf: samples)
+
+            if self.fullAudioSamples.count >= Self.maxRecordingSamples {
+                self.onMaxDurationReached?()
+            } else if !self.hasLoggedDurationWarning && self.fullAudioSamples.count >= Self.warningThresholdSamples {
+                self.hasLoggedDurationWarning = true
+                self.logger.notice("Recording has reached 30 minutes")
+            }
         }
     }
 }

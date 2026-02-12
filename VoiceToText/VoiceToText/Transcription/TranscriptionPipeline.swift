@@ -39,6 +39,7 @@ final class TranscriptionPipeline: ObservableObject {
     // MARK: - State
 
     @Published var isModelReady: Bool = false
+    @Published var isModelLoading: Bool = false
 
     // MARK: - App Lifecycle
 
@@ -85,6 +86,10 @@ final class TranscriptionPipeline: ObservableObject {
             appState.transitionTo(.error("Model not downloaded. Please download a model in Settings."))
             return
         }
+
+        isModelLoading = true
+        isModelReady = false
+        defer { isModelLoading = false }
 
         let modelURL = modelManager.activeModelFileURL(for: model, fastMode: appState.fastMode)
         let language = WhisperLanguage.from(code: appState.selectedLanguage)
@@ -136,6 +141,16 @@ final class TranscriptionPipeline: ObservableObject {
 
         do {
             recordingSession.onTick = { [weak self] in self?.tick() }
+            recordingSession.audioRecorder.onDeviceChanged = { [weak self] in
+                guard let self else { return }
+                RecordingOverlayWindow.shared.showToast("Audio device changed")
+                self.stopRecording()
+            }
+            recordingSession.audioRecorder.onMaxDurationReached = { [weak self] in
+                guard let self else { return }
+                RecordingOverlayWindow.shared.showToast("Maximum recording time reached")
+                self.stopRecording()
+            }
             try recordingSession.start(config: appState.pipelineConfig, clipboardPaster: ClipboardPaster())
             appState.transitionTo(.recording)
             RecordingOverlayWindow.shared.show()
@@ -362,8 +377,6 @@ final class TranscriptionPipeline: ObservableObject {
             return
         }
 
-        RecordingOverlayWindow.shared.hide()
-
         // Detect app context from frontmost app (if enabled)
         let appContext: AppCategory = appState.appContextEnabled
             ? AppContextDetector.detect(bundleIdentifier: recordingSession.frontmostApp?.bundleIdentifier)
@@ -377,8 +390,13 @@ final class TranscriptionPipeline: ObservableObject {
             customVocabulary: CustomVocabulary.load(),
             appContext: appContext,
             activePreset: AIModePreset.activePreset(),
-            preferDirectInsertion: false // TODO: temporarily disabled, always use clipboard paste
+            preferDirectInsertion: appState.preferDirectInsertion
         )
+
+        // Hide overlay unless a toast is being shown (toast auto-dismisses itself)
+        if appState.toastMessage == nil {
+            RecordingOverlayWindow.shared.hide()
+        }
 
         // Save to history
         TranscriptionHistoryStore.shared.addRecord(TranscriptionRecord(
