@@ -13,6 +13,29 @@ final class DirectTextInserter {
         case notSupported(reason: String)
     }
 
+    /// Check whether the focused UI element is an editable text field.
+    func hasEditableTextField() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedElement: AnyObject?
+        let focusResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        guard focusResult == .success, let element = focusedElement else { return false }
+
+        let axElement = element as! AXUIElement
+
+        var roleValue: AnyObject?
+        AXUIElementCopyAttributeValue(axElement, kAXRoleAttribute as CFString, &roleValue)
+        let role = roleValue as? String ?? ""
+
+        let textRoles = [kAXTextFieldRole, kAXTextAreaRole, "AXComboBox", "AXSearchField"]
+        guard textRoles.contains(where: { role.contains($0) }) else { return false }
+
+        var settable: DarwinBoolean = false
+        let settableResult = AXUIElementIsAttributeSettable(axElement, kAXValueAttribute as CFString, &settable)
+        return settableResult == .success && settable.boolValue
+    }
+
     /// Attempt to insert text directly into the focused text field.
     func insert(text: String) -> InsertResult {
         guard AXIsProcessTrusted() else {

@@ -107,6 +107,9 @@ final class TranscriptionPipeline: ObservableObject {
     // MARK: - Recording Control
 
     func startRecording() {
+        // Cancel any pending paste from a previous transcription
+        pasteCoordinator.cancelPendingPaste()
+
         guard appState.recordingState == .idle else {
             logger.warning("Cannot start recording in state: \(String(describing: self.appState.recordingState))")
             return
@@ -177,6 +180,7 @@ final class TranscriptionPipeline: ObservableObject {
     }
 
     func cancelRecording() {
+        pasteCoordinator.cancelPendingPaste()
         if appState.recordingState == .recording {
             recordingSession.stop()
         }

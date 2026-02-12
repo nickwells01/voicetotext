@@ -34,8 +34,11 @@ final class ClipboardPaster {
             CGRequestPostEventAccess()
         }
 
-        // Put text on clipboard
+        // Save previous clipboard contents before overwriting
         let pasteboard = NSPasteboard.general
+        let savedClipboard = saveClipboardContents(pasteboard)
+
+        // Put text on clipboard
         let previousChangeCount = pasteboard.changeCount
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -43,6 +46,7 @@ final class ClipboardPaster {
         // Verify clipboard was set
         guard pasteboard.changeCount != previousChangeCount else {
             logger.error("Failed to set pasteboard contents")
+            restoreClipboardContents(savedClipboard, to: pasteboard)
             return .copiedOnly(reason: "Clipboard write failed")
         }
         logger.info("Set transcribed text on pasteboard (\(text.count) chars)")
@@ -58,6 +62,7 @@ final class ClipboardPaster {
             let currentFrontmost = NSWorkspace.shared.frontmostApplication
             if currentFrontmost?.processIdentifier != targetApp.processIdentifier {
                 logger.warning("Failed to restore focus to \(targetApp.localizedName ?? "unknown"). Text is on clipboard.")
+                // Don't restore — user needs transcribed text on clipboard for manual paste
                 return .copiedOnly(reason: "Could not restore focus to \(targetApp.localizedName ?? "target app")")
             }
         } else {
@@ -68,17 +73,69 @@ final class ClipboardPaster {
         // Primary: CGEvent posted to session event tap
         if simulatePasteViaCGEvent() {
             logger.info("Auto-paste succeeded via CGEvent")
+            await restoreClipboardAfterPaste(savedClipboard, pasteboard: pasteboard)
             return .pasted
         }
 
         // Fallback: AppleScript via System Events
         if simulatePasteViaAppleScript() {
             logger.info("Auto-paste succeeded via AppleScript")
+            await restoreClipboardAfterPaste(savedClipboard, pasteboard: pasteboard)
             return .pasted
         }
 
         logger.warning("Auto-paste failed — text is on clipboard for manual Cmd+V")
+        // Don't restore — user needs transcribed text on clipboard for manual paste
         return .copiedOnly(reason: "Paste simulation failed")
+    }
+
+    // MARK: - Clipboard Save / Restore
+
+    /// Snapshot of one pasteboard item: each type mapped to its raw data.
+    private typealias SavedItem = [(NSPasteboard.PasteboardType, Data)]
+
+    /// Save all items currently on the pasteboard so they can be restored later.
+    private func saveClipboardContents(_ pasteboard: NSPasteboard) -> [SavedItem] {
+        guard let items = pasteboard.pasteboardItems else { return [] }
+
+        var saved: [SavedItem] = []
+        for item in items {
+            var pairs: SavedItem = []
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    pairs.append((type, data))
+                }
+            }
+            if !pairs.isEmpty {
+                saved.append(pairs)
+            }
+        }
+        if !saved.isEmpty {
+            logger.info("Saved \(saved.count) clipboard item(s) for later restore")
+        }
+        return saved
+    }
+
+    /// Restore previously saved clipboard contents.
+    private func restoreClipboardContents(_ saved: [SavedItem], to pasteboard: NSPasteboard) {
+        guard !saved.isEmpty else { return }
+
+        pasteboard.clearContents()
+        for itemPairs in saved {
+            let item = NSPasteboardItem()
+            for (type, data) in itemPairs {
+                item.setData(data, forType: type)
+            }
+            pasteboard.writeObjects([item])
+        }
+        logger.info("Restored \(saved.count) clipboard item(s)")
+    }
+
+    /// Wait for the paste keystroke to be processed, then restore the clipboard.
+    private func restoreClipboardAfterPaste(_ saved: [SavedItem], pasteboard: NSPasteboard) async {
+        // Give the target app time to read the clipboard from the Cmd+V event
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+        restoreClipboardContents(saved, to: pasteboard)
     }
 
     // MARK: - Paste via CGEvent (primary)
