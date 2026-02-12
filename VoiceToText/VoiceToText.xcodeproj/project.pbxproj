@@ -49,7 +49,34 @@
 		C1A2B3D4E5F60011C1A2B3D4 /* TranscriptionTestHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */; };
 		C1A2B3D4E5F60012C1A2B3D4 /* TestHarnessMenuExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */; };
 		D1A2B3C4E5F60020D1A2B3C4 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */; };
+		F1AA00000000000200000001 /* AIModePresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000001 /* AIModePresetTests.swift */; };
+		F1AA00000000000200000002 /* AppContextDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000002 /* AppContextDetectorTests.swift */; };
+		F1AA00000000000200000003 /* AudioRingBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000003 /* AudioRingBufferTests.swift */; };
+		F1AA00000000000200000004 /* CodeReviewFixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000004 /* CodeReviewFixTests.swift */; };
+		F1AA00000000000200000005 /* CompetitiveQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000005 /* CompetitiveQualityTests.swift */; };
+		F1AA00000000000200000006 /* CustomVocabularyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000006 /* CustomVocabularyTests.swift */; };
+		F1AA00000000000200000007 /* EdgeCaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000007 /* EdgeCaseTests.swift */; };
+		F1AA00000000000200000008 /* FillerWordFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000008 /* FillerWordFilterTests.swift */; };
+		F1AA00000000000200000009 /* LLMPostProcessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000009 /* LLMPostProcessorTests.swift */; };
+		F1AA0000000000020000000A /* PipelineConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000A /* PipelineConfigTests.swift */; };
+		F1AA0000000000020000000B /* PipelineIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000B /* PipelineIntegrationTests.swift */; };
+		F1AA0000000000020000000C /* RegressionGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000C /* RegressionGuardTests.swift */; };
+		F1AA0000000000020000000D /* SilenceDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000D /* SilenceDetectorTests.swift */; };
+		F1AA0000000000020000000E /* StabilizerRobustnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000E /* StabilizerRobustnessTests.swift */; };
+		F1AA0000000000020000000F /* StreamingQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA0000000000010000000F /* StreamingQualityTests.swift */; };
+		F1AA00000000000200000010 /* TranscriptStabilizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000010 /* TranscriptStabilizerTests.swift */; };
+		F1AA00000000000200000011 /* TranscriptionHistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000011 /* TranscriptionHistoryStoreTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F1AA00000000000800000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FF7C248FAE2398C564576582 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C945403B6A2416FDC843519B;
+			remoteInfo = VoiceToText;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		068019CBCC6F6BDD8F39DE15 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
@@ -90,6 +117,24 @@
 		C1A2B3D4E5F60001C1A2B3D4 /* TranscriptionTestHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTestHarness.swift; sourceTree = "<group>"; };
 		C1A2B3D4E5F60002C1A2B3D4 /* TestHarnessMenuExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestHarnessMenuExtension.swift; sourceTree = "<group>"; };
 		D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000001 /* AIModePresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModePresetTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000002 /* AppContextDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContextDetectorTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000003 /* AudioRingBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRingBufferTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000004 /* CodeReviewFixTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeReviewFixTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000005 /* CompetitiveQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitiveQualityTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000006 /* CustomVocabularyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomVocabularyTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000007 /* EdgeCaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeCaseTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000008 /* FillerWordFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillerWordFilterTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000009 /* LLMPostProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMPostProcessorTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000A /* PipelineConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineConfigTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000B /* PipelineIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineIntegrationTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000C /* RegressionGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegressionGuardTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000D /* SilenceDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilenceDetectorTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000E /* StabilizerRobustnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StabilizerRobustnessTests.swift; sourceTree = "<group>"; };
+		F1AA0000000000010000000F /* StreamingQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingQualityTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000010 /* TranscriptStabilizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptStabilizerTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000100000011 /* TranscriptionHistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionHistoryStoreTests.swift; sourceTree = "<group>"; };
+		F1AA00000000000300000001 /* VoiceToTextTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceToTextTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +147,13 @@
 				30144549E109B2017A7642BA /* LaunchAtLogin in Frameworks */,
 				81EA7D9213B20E203B69669E /* MLXLLM in Frameworks */,
 				216BA3A3116A2ACB0A271FBD /* MLXLMCommon in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1AA00000000000500000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +248,7 @@
 			isa = PBXGroup;
 			children = (
 				E503E6FF190350B5DCCADF66 /* VoiceToText.app */,
+				F1AA00000000000300000001 /* VoiceToTextTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -247,11 +300,36 @@
 			path = UI;
 			sourceTree = "<group>";
 		};
+		F1AA00000000000400000001 /* VoiceToTextTests */ = {
+			isa = PBXGroup;
+			children = (
+				F1AA00000000000100000001 /* AIModePresetTests.swift */,
+				F1AA00000000000100000002 /* AppContextDetectorTests.swift */,
+				F1AA00000000000100000003 /* AudioRingBufferTests.swift */,
+				F1AA00000000000100000004 /* CodeReviewFixTests.swift */,
+				F1AA00000000000100000005 /* CompetitiveQualityTests.swift */,
+				F1AA00000000000100000006 /* CustomVocabularyTests.swift */,
+				F1AA00000000000100000007 /* EdgeCaseTests.swift */,
+				F1AA00000000000100000008 /* FillerWordFilterTests.swift */,
+				F1AA00000000000100000009 /* LLMPostProcessorTests.swift */,
+				F1AA0000000000010000000A /* PipelineConfigTests.swift */,
+				F1AA0000000000010000000B /* PipelineIntegrationTests.swift */,
+				F1AA0000000000010000000C /* RegressionGuardTests.swift */,
+				F1AA0000000000010000000D /* SilenceDetectorTests.swift */,
+				F1AA0000000000010000000E /* StabilizerRobustnessTests.swift */,
+				F1AA0000000000010000000F /* StreamingQualityTests.swift */,
+				F1AA00000000000100000010 /* TranscriptStabilizerTests.swift */,
+				F1AA00000000000100000011 /* TranscriptionHistoryStoreTests.swift */,
+			);
+			path = VoiceToTextTests;
+			sourceTree = "<group>";
+		};
 		EB5F44ED8E80127B23CDD081 = {
 			isa = PBXGroup;
 			children = (
 				755E63CDEE0B41B9A7E1F6FD /* Packages */,
 				63858BE6007933658C3D1507 /* VoiceToText */,
+				F1AA00000000000400000001 /* VoiceToTextTests */,
 				6AAD37D967B17A2CDD51986F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -282,6 +360,23 @@
 			productReference = E503E6FF190350B5DCCADF66 /* VoiceToText.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F1AA00000000000600000001 /* VoiceToTextTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F1AA00000000000A00000001 /* Build configuration list for PBXNativeTarget "VoiceToTextTests" */;
+			buildPhases = (
+				F1AA00000000000500000001 /* Sources */,
+				F1AA00000000000500000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F1AA00000000000700000001 /* PBXTargetDependency */,
+			);
+			name = VoiceToTextTests;
+			productName = VoiceToTextTests;
+			productReference = F1AA00000000000300000001 /* VoiceToTextTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -293,6 +388,10 @@
 				TargetAttributes = {
 					C945403B6A2416FDC843519B = {
 						ProvisioningStyle = Automatic;
+					};
+					F1AA00000000000600000001 = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = C945403B6A2416FDC843519B;
 					};
 				};
 			};
@@ -317,6 +416,7 @@
 			projectRoot = "";
 			targets = (
 				C945403B6A2416FDC843519B /* VoiceToText */,
+				F1AA00000000000600000001 /* VoiceToTextTests */,
 			);
 		};
 /* End PBXProject section */
@@ -366,7 +466,39 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1AA00000000000500000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F1AA00000000000200000001 /* AIModePresetTests.swift in Sources */,
+				F1AA00000000000200000002 /* AppContextDetectorTests.swift in Sources */,
+				F1AA00000000000200000003 /* AudioRingBufferTests.swift in Sources */,
+				F1AA00000000000200000004 /* CodeReviewFixTests.swift in Sources */,
+				F1AA00000000000200000005 /* CompetitiveQualityTests.swift in Sources */,
+				F1AA00000000000200000006 /* CustomVocabularyTests.swift in Sources */,
+				F1AA00000000000200000007 /* EdgeCaseTests.swift in Sources */,
+				F1AA00000000000200000008 /* FillerWordFilterTests.swift in Sources */,
+				F1AA00000000000200000009 /* LLMPostProcessorTests.swift in Sources */,
+				F1AA0000000000020000000A /* PipelineConfigTests.swift in Sources */,
+				F1AA0000000000020000000B /* PipelineIntegrationTests.swift in Sources */,
+				F1AA0000000000020000000C /* RegressionGuardTests.swift in Sources */,
+				F1AA0000000000020000000D /* SilenceDetectorTests.swift in Sources */,
+				F1AA0000000000020000000E /* StabilizerRobustnessTests.swift in Sources */,
+				F1AA0000000000020000000F /* StreamingQualityTests.swift in Sources */,
+				F1AA00000000000200000010 /* TranscriptStabilizerTests.swift in Sources */,
+				F1AA00000000000200000011 /* TranscriptionHistoryStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1AA00000000000700000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C945403B6A2416FDC843519B /* VoiceToText */;
+			targetProxy = F1AA00000000000800000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1559F8CC3B2FDD12E7542E89 /* Debug */ = {
@@ -534,6 +666,38 @@
 			};
 			name = Release;
 		};
+		F1AA00000000000900000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = R8V5249T5A;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicetotext.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoiceToText.app/Contents/MacOS/VoiceToText";
+			};
+			name = Debug;
+		};
+		F1AA00000000000900000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = R8V5249T5A;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicetotext.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoiceToText.app/Contents/MacOS/VoiceToText";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -551,6 +715,15 @@
 			buildConfigurations = (
 				1559F8CC3B2FDD12E7542E89 /* Debug */,
 				DD453917CB57FA672F93313D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F1AA00000000000A00000001 /* Build configuration list for PBXNativeTarget "VoiceToTextTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1AA00000000000900000001 /* Debug */,
+				F1AA00000000000900000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
