@@ -70,7 +70,9 @@ final class LLMPostProcessorTests: XCTestCase {
 
         // Clean up
         config.isEnabled = false
+        config.apiKey = ""
         config.save()
+        KeychainHelper.delete(account: "llm-api-key")
     }
 
     // MARK: - AI Mode Presets
