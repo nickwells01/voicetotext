@@ -33,5 +33,28 @@ extension TranscriptionPipeline {
             logger.error("Test harness failed: \(error.localizedDescription)")
         }
     }
+
+    func runTestBatch() async {
+        let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "TestHarness")
+
+        guard isModelReady else {
+            print("[TestHarness] ERROR: no model loaded")
+            logger.error("Cannot run batch test: no model loaded")
+            return
+        }
+        print("[TestHarness] runTestBatch() starting")
+
+        let harness = TranscriptionTestHarness()
+
+        do {
+            _ = try await harness.runBatch(
+                whisperManager: whisperManager,
+                pipelineConfig: AppState.shared.pipelineConfig
+            )
+        } catch {
+            print("[TestHarness] ERROR: \(error)")
+            logger.error("Batch test failed: \(error.localizedDescription)")
+        }
+    }
 }
 #endif

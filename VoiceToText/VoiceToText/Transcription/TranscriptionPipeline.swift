@@ -348,6 +348,7 @@ final class TranscriptionPipeline: ObservableObject {
         // tokenizations across sliding window boundaries. A single decode of the
         // full audio avoids this entirely. whisper_full() internally handles long
         // audio via 30-second seek chunks, so this works for any recording length.
+        var didFullDecode = false
         let fullAudio = recordingSession.audioRecorder.getFullAudio()
         if !fullAudio.isEmpty {
             do {
@@ -355,6 +356,7 @@ final class TranscriptionPipeline: ObservableObject {
                 if !freshTranscription.isEmpty {
                     stabilizer.reset()
                     stabilizer.state.rawCommitted = freshTranscription
+                    didFullDecode = true
                     logger.info("Full-audio decode: \(freshTranscription.count) chars (\(fullAudio.count) samples)")
                 }
             } catch {
@@ -362,8 +364,14 @@ final class TranscriptionPipeline: ObservableObject {
             }
         }
 
-        // Finalize any remaining speculative text
-        stabilizer.finalizeAll()
+        // Finalize any remaining speculative text.
+        // Skip finalizeAll() when full decode succeeded — the full-audio result is
+        // already authoritative and finalizeAll()'s aggressive removeRepeatedPhrases
+        // (minLen:3) destroys legitimate repeated phrases in natural speech like
+        // "I think we", "we need to", etc.
+        if !didFullDecode {
+            stabilizer.finalizeAll()
+        }
         updateUIFromStabilizer()
 
         var rawText = stabilizer.state.rawCommitted

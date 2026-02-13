@@ -10,6 +10,7 @@ struct TestHarnessConfig {
     var voiceRate: Float = 180  // words per minute
     var simulateRealTime: Bool = false
     var pipelineConfig: PipelineConfig = PipelineConfig()
+    var skipWarmup: Bool = false
 }
 
 // MARK: - Tick Metrics
@@ -30,10 +31,44 @@ struct TestHarnessReport {
     let tickMetrics: [TickMetrics]
     let streamingResult: String
     let fullDecodeResult: String
+    let productionResult: String  // full decode after finalizeAll() post-processing
     let referenceText: String
     let audioDurationMs: Int
     let totalElapsedMs: Double
     let flickerEvents: [Int]  // tick indices where flicker occurred
+}
+
+// MARK: - Test Phrase
+
+struct TestPhrase {
+    let id: String
+    let category: String
+    let text: String
+    let expectedDurationRange: ClosedRange<Int>  // seconds, approximate
+}
+
+// MARK: - Batch Results
+
+struct PhraseResult {
+    let phrase: TestPhrase
+    let streamingWER: Double
+    let fullDecodeWER: Double
+    let productionWER: Double  // WER after finalizeAll() post-processing
+    let flickerCount: Int
+    let timeToFirstWordMs: Int
+    let audioDurationMs: Int
+    let passed: Bool
+}
+
+struct BatchReport {
+    let results: [PhraseResult]
+    let meanStreamingWER: Double
+    let meanFullDecodeWER: Double
+    let meanProductionWER: Double
+    let maxFullDecodeWER: Double
+    let maxProductionWER: Double
+    let passCount: Int
+    let failCount: Int
 }
 
 // MARK: - TTS Delegate
@@ -159,14 +194,16 @@ final class TranscriptionTestHarness {
         // Warmup: decode maxBufferSamples of silence to pre-allocate Metal graph buffers.
         // Without this, the Metal allocator crashes after 3+ reallocations when graph
         // sizes change due to varying token counts across decodes.
-        log("Warming up Metal graph allocator...")
-        let warmupSilence = [Float](repeating: 0, count: maxBufferSamples)
-        _ = try await whisperManager.transcribeWindow(
-            frames: warmupSilence,
-            windowStartAbsMs: 0,
-            prompt: nil
-        )
-        log("Warmup complete")
+        if !config.skipWarmup {
+            log("Warming up Metal graph allocator...")
+            let warmupSilence = [Float](repeating: 0, count: maxBufferSamples)
+            _ = try await whisperManager.transcribeWindow(
+                frames: warmupSilence,
+                windowStartAbsMs: 0,
+                prompt: nil
+            )
+            log("Warmup complete")
+        }
 
         // Tick loop
         var tickIndex = 0
@@ -303,6 +340,21 @@ final class TranscriptionTestHarness {
         log("Running full-audio re-decode on \(fullAudioSamples.count) samples...")
         let fullDecodeResult = try await whisperManager.transcribeFull(frames: fullAudioSamples)
 
+        // Simulate production post-processing matching TranscriptionPipeline.finalizeRecording():
+        // When full decode succeeds, finalizeAll() is skipped (the full-audio result is
+        // authoritative). Only apply finalizeAll() when falling back to streaming stabilizer.
+        let productionResult: String
+        if fullDecodeResult.isEmpty {
+            // Full decode failed — production would use streaming + finalizeAll()
+            let productionStabilizer = TranscriptStabilizer()
+            productionStabilizer.state.rawCommitted = streamingResult
+            productionStabilizer.finalizeAll()
+            productionResult = productionStabilizer.state.rawCommitted
+        } else {
+            // Full decode succeeded — production uses it directly, no finalizeAll()
+            productionResult = fullDecodeResult
+        }
+
         let totalElapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
 
         // Detect flicker events
@@ -312,6 +364,7 @@ final class TranscriptionTestHarness {
             tickMetrics: tickMetricsList,
             streamingResult: streamingResult,
             fullDecodeResult: fullDecodeResult,
+            productionResult: productionResult,
             referenceText: config.phrase,
             audioDurationMs: audioDurationMs,
             totalElapsedMs: totalElapsedMs,
@@ -388,10 +441,23 @@ final class TranscriptionTestHarness {
 
     // MARK: - WER Calculation
 
+    /// Normalize text for WER comparison: lowercase, expand symbols,
+    /// strip all non-alphanumeric characters so "dog." matches "dog",
+    /// "$4,237" matches "4237", and "12%" matches "12 percent".
+    private func normalizeForWER(_ text: String) -> [String] {
+        text.lowercased()
+            .replacingOccurrences(of: "%", with: " percent")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "[^a-z0-9\\s]", with: "", options: .regularExpression)
+            .split(separator: " ", omittingEmptySubsequences: true)
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+    }
+
     /// Compute word error rate using Levenshtein distance on normalized word arrays.
-    private func wordErrorRate(reference: String, hypothesis: String) -> Double {
-        let ref = reference.lowercased().split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
-        let hyp = hypothesis.lowercased().split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
+    func wordErrorRate(reference: String, hypothesis: String) -> Double {
+        let ref = normalizeForWER(reference)
+        let hyp = normalizeForWER(hypothesis)
         guard !ref.isEmpty else { return hyp.isEmpty ? 0.0 : 1.0 }
 
         // Levenshtein distance on word arrays
@@ -460,13 +526,227 @@ final class TranscriptionTestHarness {
 
         let streamingWER = wordErrorRate(reference: report.referenceText, hypothesis: report.streamingResult)
         let fullDecodeWER = wordErrorRate(reference: report.referenceText, hypothesis: report.fullDecodeResult)
+        let productionWER = wordErrorRate(reference: report.referenceText, hypothesis: report.productionResult)
         log("Streaming WER: \(String(format: "%.1f", streamingWER * 100))%")
         log("Full decode WER: \(String(format: "%.1f", fullDecodeWER * 100))%")
+        log("Production WER: \(String(format: "%.1f", productionWER * 100))% (after finalizeAll)")
 
         log("")
         log("Streaming result: \(report.streamingResult)")
         log("Full decode result: \(report.fullDecodeResult)")
+        log("Production result: \(report.productionResult)")
         log("Reference text: \(report.referenceText)")
         log("=== End Report ===")
+    }
+
+    // MARK: - Test Phrase Library
+
+    static let phraseLibrary: [TestPhrase] = [
+        // Conversational (short, casual speech)
+        TestPhrase(id: "conv-1", category: "conversational",
+                   text: "I was thinking we could meet up on Thursday for lunch, maybe around noon. There's that new Italian place on Main Street.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "conv-2", category: "conversational",
+                   text: "You know what, I actually forgot to mention that the meeting got moved to 3 o'clock instead of 2.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "conv-3", category: "conversational",
+                   text: "Hey, did you see the email about the conference next week? Apparently they changed the venue to the downtown hotel.",
+                   expectedDurationRange: 5...15),
+
+        // Technical (domain vocabulary)
+        TestPhrase(id: "tech-1", category: "technical",
+                   text: "The server configuration requires updating the reverse proxy with new certificates and enabling protocol support for modern browsers.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "tech-2", category: "technical",
+                   text: "The patient presents with lower extremity swelling, elevated blood pressure, and a resting heart rate of 78 beats per minute.",
+                   expectedDurationRange: 5...15),
+
+        // Narrative (storytelling, varied sentences)
+        TestPhrase(id: "narr-1", category: "narrative",
+                   text: "The old bookshop on the corner had been there for over 50 years. Its shelves were lined with dusty volumes that few people ever asked about. The owner, a quiet man with silver hair, spent his afternoons reading behind the counter.",
+                   expectedDurationRange: 10...25),
+        TestPhrase(id: "narr-2", category: "narrative",
+                   text: "She walked through the garden as the last light of day filtered through the tall oak trees. The air smelled of jasmine and freshly cut grass. Somewhere in the distance, a church bell rang, marking the hour.",
+                   expectedDurationRange: 8...20),
+
+        // Numbers and dates
+        TestPhrase(id: "num-1", category: "numbers",
+                   text: "The total comes to $4,237 for 15 units, with delivery scheduled for March 14.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "num-2", category: "numbers",
+                   text: "Flight 1742 departs at 6:45 in the morning from gate 22 and arrives at 10:30 local time.",
+                   expectedDurationRange: 5...15),
+
+        // Proper nouns (names, places)
+        TestPhrase(id: "prop-1", category: "proper-nouns",
+                   text: "Professor Catherine O'Brien from the University of Edinburgh published her findings in the Journal of Neuroscience last September.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "prop-2", category: "proper-nouns",
+                   text: "The Amazon River flows through Brazil, Peru, and Colombia, making it one of the longest rivers in the world.",
+                   expectedDurationRange: 5...15),
+
+        // Instructions and lists
+        TestPhrase(id: "inst-1", category: "instructions",
+                   text: "First, preheat the oven to 375 degrees. Then combine 2 cups of flour, 1 teaspoon of baking soda, and half a teaspoon of salt in a large bowl.",
+                   expectedDurationRange: 8...20),
+        TestPhrase(id: "inst-2", category: "instructions",
+                   text: "To reset your password, go to the settings page, click on security, select change password, enter your current password, then type your new password twice to confirm.",
+                   expectedDurationRange: 5...20),
+
+        // Weather and business (medium)
+        TestPhrase(id: "weather-1", category: "conversational",
+                   text: "The weather forecast calls for partly cloudy skies with temperatures reaching the mid-70s by afternoon. There is a slight chance of scattered showers in the evening.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "biz-1", category: "instructions",
+                   text: "Please remember to submit your expense reports by the end of the month. All receipts must be attached and approved by your direct supervisor before processing.",
+                   expectedDurationRange: 5...15),
+
+        // Documentary and engineering
+        TestPhrase(id: "doc-1", category: "narrative",
+                   text: "The documentary explored the lives of three families living in different parts of the country, each facing unique challenges related to affordable housing and access to health care.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "eng-1", category: "technical",
+                   text: "After reviewing the test results, the engineer determined that the component failure was caused by metal fatigue, likely due to repeated stress cycles over an extended period.",
+                   expectedDurationRange: 5...15),
+
+        // Journal (medium-long)
+        TestPhrase(id: "journal-1", category: "narrative",
+                   text: "She opened the old leather journal and began reading the entries from 1947. Each page was filled with careful observations about the local wildlife, the changing seasons, and the daily routines of village life.",
+                   expectedDurationRange: 8...20),
+
+        // Long mixed (extended dictation)
+        TestPhrase(id: "long-1", category: "mixed",
+                   text: "The city council met on Tuesday evening to discuss the proposed budget for the upcoming fiscal year. The mayor presented a plan that included increased funding for public transportation and road repairs. Several council members raised concerns about the impact on property taxes. After two hours of debate, they agreed to table the vote until the next meeting.",
+                   expectedDurationRange: 15...35),
+        TestPhrase(id: "long-2", category: "mixed",
+                   text: "Good morning everyone, and welcome to the quarterly review. Last quarter we saw revenue increase by 12% compared to the same period last year. Our customer satisfaction scores remained high at 92%. However, we did see a slight uptick in support tickets, which the team is actively working to address. Looking ahead, we plan to launch two new product features by the end of next month.",
+                   expectedDurationRange: 15...35),
+
+        // 60-second extended dictation (~170 words). Deliberately includes natural
+        // repeated phrases ("I think we", "we need to", "going to be") that
+        // removeRepeatedPhrases(minLen:3) would incorrectly delete.
+        TestPhrase(id: "long-60s-1", category: "mixed",
+                   text: "Good morning everyone. I wanted to start today's meeting by going over the project timeline. I think we need to focus on three main areas this quarter. First, I think we need to improve the onboarding experience for new users. The current flow is confusing and we are seeing a 40% drop-off rate during registration. Sarah mentioned that she has some design mockups ready, and I think we should review those on Thursday. Second, we need to address the performance issues that customers have been reporting. The dashboard is loading slowly, especially for accounts with more than 500 transactions. The engineering team is going to be working on database optimization this sprint. We need to make sure we have proper monitoring in place before and after the changes. Finally, I want to talk about the upcoming conference in April. We need to prepare our presentation materials and I think we should highlight the new analytics features. The marketing team is going to be sending out invitations next week, so we need to finalize the speaker list by Friday. Does anyone have questions about these priorities?",
+                   expectedDurationRange: 45...75),
+    ]
+
+    // MARK: - Batch Runner
+
+    func runBatch(whisperManager: WhisperManager, pipelineConfig: PipelineConfig) async throws -> BatchReport {
+        log("=== Batch Test Starting (\(Self.phraseLibrary.count) phrases) ===")
+
+        // Warmup Metal graph once for the entire batch
+        let maxBufferSamples = pipelineConfig.sampleRate * pipelineConfig.maxBufferMs / 1000
+        log("Warming up Metal graph allocator...")
+        let warmupSilence = [Float](repeating: 0, count: maxBufferSamples)
+        _ = try await whisperManager.transcribeWindow(
+            frames: warmupSilence,
+            windowStartAbsMs: 0,
+            prompt: nil
+        )
+        log("Warmup complete")
+
+        var results: [PhraseResult] = []
+
+        for (i, phrase) in Self.phraseLibrary.enumerated() {
+            log("")
+            log("=== Phrase \(i + 1)/\(Self.phraseLibrary.count): \(phrase.id) [\(phrase.category)] ===")
+
+            var config = TestHarnessConfig(
+                phrase: phrase.text,
+                pipelineConfig: pipelineConfig
+            )
+            config.skipWarmup = true
+
+            let report = try await run(config: config, whisperManager: whisperManager)
+
+            let streamingWER = wordErrorRate(reference: phrase.text, hypothesis: report.streamingResult)
+            let fullDecodeWER = wordErrorRate(reference: phrase.text, hypothesis: report.fullDecodeResult)
+            let productionWER = wordErrorRate(reference: phrase.text, hypothesis: report.productionResult)
+            let firstWordTick = report.tickMetrics.first { !$0.committed.isEmpty && !$0.isSilent }
+
+            let result = PhraseResult(
+                phrase: phrase,
+                streamingWER: streamingWER,
+                fullDecodeWER: fullDecodeWER,
+                productionWER: productionWER,
+                flickerCount: report.flickerEvents.count,
+                timeToFirstWordMs: firstWordTick?.audioPositionMs ?? 0,
+                audioDurationMs: report.audioDurationMs,
+                passed: productionWER <= 0.05
+            )
+            results.append(result)
+
+            let status = result.passed ? "PASS" : "FAIL"
+            log("  -> [\(status)] Production WER: \(String(format: "%.1f", productionWER * 100))% | Full WER: \(String(format: "%.1f", fullDecodeWER * 100))% | Streaming WER: \(String(format: "%.1f", streamingWER * 100))%")
+        }
+
+        let meanStreaming = results.map(\.streamingWER).reduce(0, +) / Double(results.count)
+        let meanFull = results.map(\.fullDecodeWER).reduce(0, +) / Double(results.count)
+        let meanProd = results.map(\.productionWER).reduce(0, +) / Double(results.count)
+        let maxFull = results.map(\.fullDecodeWER).max() ?? 0
+        let maxProd = results.map(\.productionWER).max() ?? 0
+        let passCount = results.filter(\.passed).count
+
+        let batch = BatchReport(
+            results: results,
+            meanStreamingWER: meanStreaming,
+            meanFullDecodeWER: meanFull,
+            meanProductionWER: meanProd,
+            maxFullDecodeWER: maxFull,
+            maxProductionWER: maxProd,
+            passCount: passCount,
+            failCount: results.count - passCount
+        )
+
+        printBatchReport(batch)
+        return batch
+    }
+
+    // MARK: - Batch Report
+
+    private func printBatchReport(_ report: BatchReport) {
+        log("")
+        log("========================================")
+        log("         BATCH TEST SUMMARY")
+        log("========================================")
+        log("")
+        log("ID                    | Category       | Duration | Prod WER | Full WER | Stream WER | Flicker | Status")
+        log("--------------------- | -------------- | -------- | -------- | -------- | ---------- | ------- | ------")
+
+        for r in report.results {
+            let id = r.phrase.id.padding(toLength: 21, withPad: " ", startingAt: 0)
+            let cat = r.phrase.category.padding(toLength: 14, withPad: " ", startingAt: 0)
+            let dur = "\(String(format: "%5.1f", Double(r.audioDurationMs) / 1000.0))s".padding(toLength: 8, withPad: " ", startingAt: 0)
+            let prod = "\(String(format: "%5.1f", r.productionWER * 100))%".padding(toLength: 8, withPad: " ", startingAt: 0)
+            let full = "\(String(format: "%5.1f", r.fullDecodeWER * 100))%".padding(toLength: 8, withPad: " ", startingAt: 0)
+            let stream = "\(String(format: "%5.1f", r.streamingWER * 100))%".padding(toLength: 10, withPad: " ", startingAt: 0)
+            let flicker = String(r.flickerCount).padding(toLength: 7, withPad: " ", startingAt: 0)
+            let status = r.passed ? "PASS" : "FAIL"
+
+            log("\(id) | \(cat) | \(dur) | \(prod) | \(full) | \(stream) | \(flicker) | \(status)")
+        }
+
+        log("")
+        log("=== Aggregate Results ===")
+        log("Phrases: \(report.results.count)")
+        log("Pass rate: \(report.passCount)/\(report.results.count) (\(String(format: "%.0f", Double(report.passCount) / Double(report.results.count) * 100))%) [gate: production WER <= 5%]")
+        log("Mean production WER: \(String(format: "%.1f", report.meanProductionWER * 100))% (what users get)")
+        log("Max production WER: \(String(format: "%.1f", report.maxProductionWER * 100))%")
+        log("Mean full-decode WER: \(String(format: "%.1f", report.meanFullDecodeWER * 100))% (raw Whisper)")
+        log("Max full-decode WER: \(String(format: "%.1f", report.maxFullDecodeWER * 100))%")
+        log("Mean streaming WER: \(String(format: "%.1f", report.meanStreamingWER * 100))%")
+
+        if report.failCount > 0 {
+            log("")
+            log("=== Failing Phrases ===")
+            for r in report.results where !r.passed {
+                log("  \(r.phrase.id): prod \(String(format: "%.1f", r.productionWER * 100))% / raw \(String(format: "%.1f", r.fullDecodeWER * 100))% WER [\(r.phrase.category)]")
+            }
+        }
+
+        log("")
+        let overall = report.failCount == 0 ? "ALL PASSED" : "\(report.failCount) FAILED"
+        log("=== \(overall) ===")
     }
 }
