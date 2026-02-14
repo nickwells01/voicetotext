@@ -169,22 +169,6 @@ final class TranscriptStabilizer {
         state.rawCommitted = removeRepeatedPhrases(state.rawCommitted, minNonConsecutivePhraseLen: 3)
         state.rawCommitted = normalizeWhitespace(state.rawCommitted)
 
-        // Strip trailing sentence fragments (1-3 words after last sentence-ending
-        // punctuation). These are almost always echo artifacts from Whisper re-decoding
-        // the beginning of the audio after the real content ends.
-        let finalWords = state.rawCommitted.split(separator: " ", omittingEmptySubsequences: true).map { String($0) }
-        if let lastWord = finalWords.last,
-           !lastWord.hasSuffix(".") && !lastWord.hasSuffix("!") && !lastWord.hasSuffix("?") {
-            if let lastSentenceEnd = finalWords.lastIndex(where: {
-                $0.hasSuffix(".") || $0.hasSuffix("!") || $0.hasSuffix("?")
-            }) {
-                let trailingCount = finalWords.count - lastSentenceEnd - 1
-                if trailingCount <= 3 {
-                    state.rawCommitted = finalWords[0...lastSentenceEnd].joined(separator: " ")
-                }
-            }
-        }
-
         // Clear LocalAgreement state
         state.previousDecodeRawWords = []
         state.previousDecodeNormalizedWords = []
