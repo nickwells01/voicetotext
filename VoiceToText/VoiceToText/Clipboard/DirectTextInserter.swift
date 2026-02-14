@@ -74,7 +74,14 @@ final class DirectTextInserter {
         // Get current value and selection to insert at cursor position
         var currentValueRef: AnyObject?
         AXUIElementCopyAttributeValue(axElement, kAXValueAttribute as CFString, &currentValueRef)
-        let currentValue = currentValueRef as? String ?? ""
+        var currentValue = currentValueRef as? String ?? ""
+
+        // If the current value matches the placeholder, treat the field as empty
+        var placeholderRef: AnyObject?
+        AXUIElementCopyAttributeValue(axElement, kAXPlaceholderValueAttribute as CFString, &placeholderRef)
+        if let placeholder = placeholderRef as? String, currentValue == placeholder {
+            currentValue = ""
+        }
 
         var selectedRangeRef: AnyObject?
         AXUIElementCopyAttributeValue(axElement, kAXSelectedTextRangeAttribute as CFString, &selectedRangeRef)

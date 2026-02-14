@@ -80,10 +80,20 @@ final class PasteCoordinator {
         let hasTextField = AXIsProcessTrusted() && directInserter.hasEditableTextField()
 
         if !hasTextField && AXIsProcessTrusted() {
-            // No text field — enter pending paste mode
-            logger.info("No editable text field focused, entering pending paste mode")
-            startPendingPaste(text: finalText, targetApp: targetApp, appState: appState)
-            return finalText
+            // No text field — try clipboard paste first (works in Terminal, etc.)
+            logger.info("No editable text field focused, attempting clipboard paste")
+            let pasteResult = await clipboardPaster.paste(text: finalText, targetApp: targetApp)
+
+            switch pasteResult {
+            case .pasted:
+                logger.info("Clipboard paste succeeded without text field")
+                return finalText
+            case .copiedOnly(let reason):
+                // Clipboard paste didn't work either — enter pending paste mode
+                logger.info("Clipboard paste failed (\(reason)), entering pending paste mode")
+                startPendingPaste(text: finalText, targetApp: targetApp, appState: appState)
+                return finalText
+            }
         }
 
         // There IS a text field (or we can't detect) — paste immediately
