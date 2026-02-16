@@ -51,6 +51,9 @@
 		C1A2B3D4E5F60013C1A2B3D4 /* LLMCleanupTestHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A2B3D4E5F60003C1A2B3D4 /* LLMCleanupTestHarness.swift */; };
 		D1A2B3C4E5F60020D1A2B3C4 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */; };
 		E1A2B3C4D5E60001E1A2B3C4 /* DomainContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E60011E1A2B3C4 /* DomainContext.swift */; };
+		F2A1B2C3D4E50001F2A1B2C3 /* MedicalTermIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A1B2C3D4E50011F2A1B2C3 /* MedicalTermIndex.swift */; };
+		F2A1B2C3D4E50002F2A1B2C3 /* MedCorrector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A1B2C3D4E50012F2A1B2C3 /* MedCorrector.swift */; };
+		F2A1B2C3D4E50003F2A1B2C3 /* MedicalTermTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2A1B2C3D4E50013F2A1B2C3 /* MedicalTermTests.swift */; };
 		E1A2B3C4D5E60002E1A2B3C4 /* medical-terms-en.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E60012E1A2B3C4 /* medical-terms-en.txt */; };
 		E1A2B3C4D5E60003E1A2B3C4 /* medical-terms-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C4D5E60013E1A2B3C4 /* medical-terms-LICENSE.txt */; };
 		F1AA00000000000200000001 /* AIModePresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA00000000000100000001 /* AIModePresetTests.swift */; };
@@ -123,6 +126,9 @@
 		C1A2B3D4E5F60003C1A2B3D4 /* LLMCleanupTestHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMCleanupTestHarness.swift; sourceTree = "<group>"; };
 		D1A2B3C4E5F60010D1A2B3C4 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E60011E1A2B3C4 /* DomainContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainContext.swift; sourceTree = "<group>"; };
+		F2A1B2C3D4E50011F2A1B2C3 /* MedicalTermIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalTermIndex.swift; sourceTree = "<group>"; };
+		F2A1B2C3D4E50012F2A1B2C3 /* MedCorrector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedCorrector.swift; sourceTree = "<group>"; };
+		F2A1B2C3D4E50013F2A1B2C3 /* MedicalTermTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicalTermTests.swift; sourceTree = "<group>"; };
 		E1A2B3C4D5E60012E1A2B3C4 /* medical-terms-en.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "medical-terms-en.txt"; sourceTree = "<group>"; };
 		E1A2B3C4D5E60013E1A2B3C4 /* medical-terms-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "medical-terms-LICENSE.txt"; sourceTree = "<group>"; };
 		F1AA00000000000100000001 /* AIModePresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModePresetTests.swift; sourceTree = "<group>"; };
@@ -217,6 +223,8 @@
 			children = (
 				53A99AE2B47FD26238ADC398 /* LLMPostProcessor.swift */,
 				993D827F28157515165A6533 /* LocalLLMManager.swift */,
+				F2A1B2C3D4E50012F2A1B2C3 /* MedCorrector.swift */,
+				F2A1B2C3D4E50011F2A1B2C3 /* MedicalTermIndex.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -332,6 +340,7 @@
 				F1AA00000000000100000007 /* EdgeCaseTests.swift */,
 				F1AA00000000000100000008 /* FillerWordFilterTests.swift */,
 				F1AA00000000000100000009 /* LLMPostProcessorTests.swift */,
+				F2A1B2C3D4E50013F2A1B2C3 /* MedicalTermTests.swift */,
 				F1AA0000000000010000000A /* PipelineConfigTests.swift */,
 				F1AA0000000000010000000B /* PipelineIntegrationTests.swift */,
 				F1AA0000000000010000000C /* RegressionGuardTests.swift */,
@@ -498,6 +507,8 @@
 				C1A2B3D4E5F60013C1A2B3D4 /* LLMCleanupTestHarness.swift in Sources */,
 				D1A2B3C4E5F60020D1A2B3C4 /* KeychainHelper.swift in Sources */,
 				E1A2B3C4D5E60001E1A2B3C4 /* DomainContext.swift in Sources */,
+				F2A1B2C3D4E50001F2A1B2C3 /* MedicalTermIndex.swift in Sources */,
+				F2A1B2C3D4E50002F2A1B2C3 /* MedCorrector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -522,6 +533,7 @@
 				F1AA0000000000020000000F /* StreamingQualityTests.swift in Sources */,
 				F1AA00000000000200000010 /* TranscriptStabilizerTests.swift in Sources */,
 				F1AA00000000000200000011 /* TranscriptionHistoryStoreTests.swift in Sources */,
+				F2A1B2C3D4E50003F2A1B2C3 /* MedicalTermTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

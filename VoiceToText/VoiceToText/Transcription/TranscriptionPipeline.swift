@@ -36,6 +36,11 @@ final class TranscriptionPipeline: ObservableObject {
 
     private var cachedLLMConfig: LLMConfig?
 
+    // MARK: - Medical Streaming Components
+
+    private var medicalTermIndex: MedicalTermIndex?
+    private var medicalPromptHintLine: String?
+
     // MARK: - State
 
     @Published var isModelReady: Bool = false
@@ -138,6 +143,22 @@ final class TranscriptionPipeline: ObservableObject {
             }
         } else {
             appState.detectedAppContext = nil
+        }
+
+        // Initialize medical streaming components if medical domain is active
+        if appState.activeDomainContext?.id == "medical" {
+            if let index = MedicalTermIndex.load() {
+                medicalTermIndex = index
+                stabilizer.medCorrector = MedCorrector(index: index)
+                // Build prompt hint line from top terms (limit ~300 chars / ~30 terms)
+                let hintTerms = Array(index.promptHintTerms.prefix(30))
+                medicalPromptHintLine = "Vocabulary: " + hintTerms.joined(separator: ", ")
+                logger.info("Medical streaming: \(index.termSet.count) terms indexed, \(hintTerms.count) prompt hints")
+            }
+        } else {
+            medicalTermIndex = nil
+            stabilizer.medCorrector = nil
+            medicalPromptHintLine = nil
         }
 
         appState.resetStreamingText()
@@ -441,30 +462,51 @@ final class TranscriptionPipeline: ObservableObject {
 
     /// Build a Whisper prompt from committed text, truncating at a sentence
     /// boundary so the model gets coherent context rather than a fragment.
+    /// When medical domain is active, appends a vocabulary hint line.
     private func buildPrompt(from committed: String) -> String? {
-        guard !committed.isEmpty else { return nil }
-        guard committed.count > appState.pipelineConfig.maxPromptChars else { return committed }
+        let hintLine = medicalPromptHintLine
+        let hintBudget = hintLine?.count ?? 0
+        // Reserve space for hint line within the prompt budget
+        let maxChars = appState.pipelineConfig.maxPromptChars - hintBudget
 
-        let suffix = String(committed.suffix(appState.pipelineConfig.maxPromptChars))
-        // Trim to the nearest sentence boundary
-        if let dotRange = suffix.range(of: ". ", options: .literal) {
-            return String(suffix[dotRange.upperBound...])
+        var prompt: String?
+        if committed.isEmpty {
+            prompt = nil
+        } else if committed.count <= maxChars {
+            prompt = committed
+        } else {
+            let suffix = String(committed.suffix(maxChars))
+            if let dotRange = suffix.range(of: ". ", options: .literal) {
+                prompt = String(suffix[dotRange.upperBound...])
+            } else if let spaceRange = suffix.range(of: " ", options: .literal) {
+                prompt = String(suffix[spaceRange.upperBound...])
+            } else {
+                prompt = suffix
+            }
         }
-        // Fall back to a word boundary
-        if let spaceRange = suffix.range(of: " ", options: .literal) {
-            return String(suffix[spaceRange.upperBound...])
+
+        // Append medical vocabulary hint line
+        if let hintLine {
+            if let existing = prompt {
+                return existing + "\n" + hintLine
+            } else {
+                return hintLine
+            }
         }
-        return suffix
+        return prompt
     }
 
     // MARK: - Cleanup
 
     private func cleanup() {
         stabilizer.reset()
+        stabilizer.medCorrector = nil
         silenceDetector.reset()
         recordingSession.cleanup()
         isDecoding = false
         needsRedecode = false
         cachedLLMConfig = nil
+        medicalTermIndex = nil
+        medicalPromptHintLine = nil
     }
 }

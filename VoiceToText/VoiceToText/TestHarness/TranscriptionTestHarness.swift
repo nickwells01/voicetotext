@@ -58,6 +58,7 @@ struct PhraseResult {
     let timeToFirstWordMs: Int
     let audioDurationMs: Int
     let passed: Bool
+    let medicalTermRecall: Double?  // nil for non-medical phrases
 }
 
 struct BatchReport {
@@ -454,6 +455,22 @@ final class TranscriptionTestHarness {
             .filter { !$0.isEmpty }
     }
 
+    /// Compute medical term recall: fraction of medical terms in reference that appear in hypothesis.
+    /// Returns nil if no medical terms are found in the reference.
+    func medicalTermRecall(reference: String, hypothesis: String, termIndex: MedicalTermIndex?) -> Double? {
+        guard let termIndex else { return nil }
+
+        let refWords = normalizeForWER(reference)
+        let hypWords = Set(normalizeForWER(hypothesis))
+
+        // Find medical terms in reference (single words only)
+        let medTermsInRef = refWords.filter { termIndex.termSet.contains($0) && $0.count >= 4 }
+        guard !medTermsInRef.isEmpty else { return nil }
+
+        let found = medTermsInRef.filter { hypWords.contains($0) }
+        return Double(found.count) / Double(medTermsInRef.count)
+    }
+
     /// Compute word error rate using Levenshtein distance on normalized word arrays.
     func wordErrorRate(reference: String, hypothesis: String) -> Double {
         let ref = normalizeForWER(reference)
@@ -622,6 +639,20 @@ final class TranscriptionTestHarness {
                    text: "Good morning everyone, and welcome to the quarterly review. Last quarter we saw revenue increase by 12% compared to the same period last year. Our customer satisfaction scores remained high at 92%. However, we did see a slight uptick in support tickets, which the team is actively working to address. Looking ahead, we plan to launch two new product features by the end of next month.",
                    expectedDurationRange: 15...35),
 
+        // Medical terminology
+        TestPhrase(id: "med-cardio", category: "medical",
+                   text: "The patient presents with tachycardia, hypertension, and bilateral lower extremity edema consistent with congestive heart failure.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "med-meds", category: "medical",
+                   text: "Current medications include metformin 500 milligrams twice daily, lisinopril 10 milligrams daily, and atorvastatin 40 milligrams at bedtime.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "med-procedure", category: "medical",
+                   text: "Electrocardiogram showed atrial fibrillation with rapid ventricular response. Echocardiogram revealed reduced ejection fraction.",
+                   expectedDurationRange: 5...15),
+        TestPhrase(id: "med-differential", category: "medical",
+                   text: "Differential diagnosis includes cholecystitis, pancreatitis, and gastroesophageal reflux disease. CT scan of the abdomen was ordered.",
+                   expectedDurationRange: 5...15),
+
         // 60-second extended dictation (~170 words). Deliberately includes natural
         // repeated phrases ("I think we", "we need to", "going to be") that
         // removeRepeatedPhrases(minLen:3) would incorrectly delete.
@@ -665,6 +696,13 @@ final class TranscriptionTestHarness {
             let productionWER = wordErrorRate(reference: phrase.text, hypothesis: report.productionResult)
             let firstWordTick = report.tickMetrics.first { !$0.committed.isEmpty && !$0.isSilent }
 
+            // Compute medical term recall if medical index is available
+            let termRecall = medicalTermRecall(
+                reference: phrase.text,
+                hypothesis: report.productionResult,
+                termIndex: MedicalTermIndex.load()
+            )
+
             let result = PhraseResult(
                 phrase: phrase,
                 streamingWER: streamingWER,
@@ -673,12 +711,14 @@ final class TranscriptionTestHarness {
                 flickerCount: report.flickerEvents.count,
                 timeToFirstWordMs: firstWordTick?.audioPositionMs ?? 0,
                 audioDurationMs: report.audioDurationMs,
-                passed: productionWER <= 0.05
+                passed: productionWER <= 0.05,
+                medicalTermRecall: termRecall
             )
             results.append(result)
 
             let status = result.passed ? "PASS" : "FAIL"
-            log("  -> [\(status)] Production WER: \(String(format: "%.1f", productionWER * 100))% | Full WER: \(String(format: "%.1f", fullDecodeWER * 100))% | Streaming WER: \(String(format: "%.1f", streamingWER * 100))%")
+            let recallStr = termRecall.map { " | Med recall: \(String(format: "%.0f", $0 * 100))%" } ?? ""
+            log("  -> [\(status)] Production WER: \(String(format: "%.1f", productionWER * 100))% | Full WER: \(String(format: "%.1f", fullDecodeWER * 100))% | Streaming WER: \(String(format: "%.1f", streamingWER * 100))%\(recallStr)")
         }
 
         let meanStreaming = results.map(\.streamingWER).reduce(0, +) / Double(results.count)
@@ -711,8 +751,8 @@ final class TranscriptionTestHarness {
         log("         BATCH TEST SUMMARY")
         log("========================================")
         log("")
-        log("ID                    | Category       | Duration | Prod WER | Full WER | Stream WER | Flicker | Status")
-        log("--------------------- | -------------- | -------- | -------- | -------- | ---------- | ------- | ------")
+        log("ID                    | Category       | Duration | Prod WER | Full WER | Stream WER | Flicker | MedRecall | Status")
+        log("--------------------- | -------------- | -------- | -------- | -------- | ---------- | ------- | --------- | ------")
 
         for r in report.results {
             let id = r.phrase.id.padding(toLength: 21, withPad: " ", startingAt: 0)
@@ -722,9 +762,11 @@ final class TranscriptionTestHarness {
             let full = "\(String(format: "%5.1f", r.fullDecodeWER * 100))%".padding(toLength: 8, withPad: " ", startingAt: 0)
             let stream = "\(String(format: "%5.1f", r.streamingWER * 100))%".padding(toLength: 10, withPad: " ", startingAt: 0)
             let flicker = String(r.flickerCount).padding(toLength: 7, withPad: " ", startingAt: 0)
+            let recall = r.medicalTermRecall.map { "\(String(format: "%5.0f", $0 * 100))%" } ?? "  n/a"
+            let recallCol = recall.padding(toLength: 9, withPad: " ", startingAt: 0)
             let status = r.passed ? "PASS" : "FAIL"
 
-            log("\(id) | \(cat) | \(dur) | \(prod) | \(full) | \(stream) | \(flicker) | \(status)")
+            log("\(id) | \(cat) | \(dur) | \(prod) | \(full) | \(stream) | \(flicker) | \(recallCol) | \(status)")
         }
 
         log("")
@@ -736,6 +778,14 @@ final class TranscriptionTestHarness {
         log("Mean full-decode WER: \(String(format: "%.1f", report.meanFullDecodeWER * 100))% (raw Whisper)")
         log("Max full-decode WER: \(String(format: "%.1f", report.maxFullDecodeWER * 100))%")
         log("Mean streaming WER: \(String(format: "%.1f", report.meanStreamingWER * 100))%")
+
+        // Medical term recall summary
+        let medResults = report.results.compactMap(\.medicalTermRecall)
+        if !medResults.isEmpty {
+            let meanRecall = medResults.reduce(0, +) / Double(medResults.count)
+            let minRecall = medResults.min() ?? 0
+            log("Medical term recall: mean \(String(format: "%.0f", meanRecall * 100))%, min \(String(format: "%.0f", minRecall * 100))% (\(medResults.count) phrases)")
+        }
 
         if report.failCount > 0 {
             log("")

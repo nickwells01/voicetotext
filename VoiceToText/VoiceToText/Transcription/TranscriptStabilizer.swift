@@ -35,6 +35,10 @@ final class TranscriptStabilizer {
 
     var state = TranscriptState()
 
+    /// Optional medical spell-corrector, applied per-chunk before LA-2 comparison.
+    /// Set when medical domain is active; nil otherwise.
+    var medCorrector: MedCorrector?
+
     // MARK: - Update
 
     /// Process a new decode result using LocalAgreement-2.
@@ -249,6 +253,13 @@ final class TranscriptStabilizer {
         }
         // Final loop check and trim if needed
         trimLoop(&rawWords)
+
+        // Apply medical spell-correction before LA-2 comparison
+        if let medCorrector {
+            let (corrected, _) = medCorrector.correctWords(rawWords)
+            rawWords = corrected
+        }
+
         let normWords = rawWords.map { normalizeWord($0) }
         return (rawWords, normWords)
     }
