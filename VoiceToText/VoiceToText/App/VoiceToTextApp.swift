@@ -48,6 +48,18 @@ struct VoiceToTextApp: App {
                             NSApp.terminate(nil)
                         }
                     }
+                    if CommandLine.arguments.contains("--test-llm") {
+                        Task {
+                            func log(_ msg: String) {
+                                FileHandle.standardError.write(Data("[LLMTest] \(msg)\n".utf8))
+                            }
+                            log("Waiting for LLM cleanup test...")
+                            // LLM test doesn't need Whisper model — runLLMTest handles its own readiness wait
+                            await pipeline.runLLMTest()
+                            log("LLM test complete, terminating")
+                            NSApp.terminate(nil)
+                        }
+                    }
                     #endif
                 }
         }

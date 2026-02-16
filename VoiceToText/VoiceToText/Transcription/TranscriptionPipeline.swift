@@ -402,6 +402,7 @@ final class TranscriptionPipeline: ObservableObject {
             customVocabulary: CustomVocabulary.load(),
             appContext: appContext,
             activePreset: AIModePreset.activePreset(),
+            domainContext: appState.activeDomainContext,
             preferDirectInsertion: appState.preferDirectInsertion
         )
 

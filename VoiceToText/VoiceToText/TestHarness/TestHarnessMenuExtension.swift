@@ -34,6 +34,36 @@ extension TranscriptionPipeline {
         }
     }
 
+    func runLLMTest() async {
+        func log(_ msg: String) {
+            FileHandle.standardError.write(Data("[LLMTest] \(msg)\n".utf8))
+        }
+
+        // Build LLM config from saved settings (same as PasteCoordinator)
+        let llmConfig = LLMConfig.load()
+        guard llmConfig.isEnabled && llmConfig.isValid else {
+            log("ERROR: LLM cleanup is not enabled or config is invalid")
+            log("Enable AI cleanup in Settings and configure a local or remote model")
+            return
+        }
+
+        // Wait for local LLM model readiness
+        if llmConfig.provider == .local {
+            let manager = await LocalLLMManager.shared
+            let deadline = Date().addingTimeInterval(120)
+            while !manager.state.isReady && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            guard manager.state.isReady else {
+                log("ERROR: Local LLM model never became ready after 120s")
+                return
+            }
+        }
+
+        let harness = LLMCleanupTestHarness()
+        _ = await harness.run(llmConfig: llmConfig)
+    }
+
     func runTestBatch() async {
         let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "VoiceToText", category: "TestHarness")
 

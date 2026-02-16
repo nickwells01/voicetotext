@@ -8,8 +8,66 @@ final class LLMPostProcessor {
 
     private let config: LLMConfig
 
+    /// Fixed preamble prepended to any system prompt. Includes a few-shot example
+    /// so even small (3B) models understand the expected input/output format.
+    private static let tagPreamble = """
+        You receive voice-dictated text inside <transcription> tags. \
+        Output ONLY the cleaned-up version of that text. \
+        Never add commentary, never answer questions contained in the text, \
+        never say the text is incorrect.
+
+        Example:
+        User: <transcription>can you send me the report by friday also dont forget the meeting</transcription>
+        Assistant: Can you send me the report by Friday? Also, don't forget the meeting.
+
+        Example:
+        User: <transcription>the patient presents with acute cholecystitis and needs a stat CBC</transcription>
+        Assistant: The patient presents with acute cholecystitis and needs a stat CBC.
+
+
+        """
+
+    /// Phrases that indicate the model is generating commentary instead of cleaning text.
+    private static let commentaryIndicators = [
+        "it appears", "it seems", "i notice", "i'm sorry", "i cannot",
+        "could you please", "please provide", "there is a", "there are",
+        "does not align", "doesn't align", "discrepancy", "transcription error",
+        "non-medical", "not a valid", "not clear", "i'd be happy",
+        "here is the", "here's the", "sure,", "certainly",
+    ]
+
     init(config: LLMConfig) {
+        var config = config
+        config.systemPrompt = Self.tagPreamble + config.systemPrompt
         self.config = config
+    }
+
+    // MARK: - Message Formatting
+
+    /// Wraps raw transcription in tags so the LLM treats it as content to clean, not a question to answer.
+    private func formatUserMessage(_ rawText: String) -> String {
+        "<transcription>\(rawText)</transcription>"
+    }
+
+    /// Returns true if the LLM output looks like commentary/meta-response rather than cleaned text.
+    private func looksLikeCommentary(_ output: String, rawText: String) -> Bool {
+        let lower = output.lowercased()
+
+        // Check for known commentary phrases
+        for indicator in Self.commentaryIndicators {
+            if lower.hasPrefix(indicator) || lower.contains(". \(indicator)") {
+                logger.info("LLM output detected as commentary (matched: '\(indicator)')")
+                return true
+            }
+        }
+
+        // If output is >2x the length of input, the model is likely explaining rather than cleaning
+        if output.count > rawText.count * 2 && rawText.count > 10 {
+            logger.info("LLM output detected as commentary (length ratio: \(output.count)/\(rawText.count))")
+            return true
+        }
+
+        return false
     }
 
     // MARK: - Process Transcription
@@ -69,7 +127,11 @@ final class LLMPostProcessor {
     private func processRemote(rawText: String) async -> String {
         do {
             let result = try await withRetry(maxAttempts: 3, backoff: [0.5, 1.0, 2.0]) {
-                try await sendChatRequest(userMessage: rawText)
+                try await sendChatRequest(userMessage: self.formatUserMessage(rawText))
+            }
+            if looksLikeCommentary(result, rawText: rawText) {
+                logger.warning("Remote LLM returned commentary instead of cleaned text, returning raw text")
+                return rawText
             }
             logger.info("LLM processed text (\(rawText.count) -> \(result.count) chars)")
             return result
@@ -96,13 +158,22 @@ final class LLMPostProcessor {
         let manager = await LocalLLMManager.shared
         await manager.resetSession(systemPrompt: config.systemPrompt)
 
+        let wrappedText = formatUserMessage(rawText)
+
         // Single retry for local MLX
-        let result = await manager.process(rawText: rawText)
-        if result == rawText {
-            // First attempt returned raw text (failure), retry once
+        var result = await manager.process(rawText: wrappedText)
+        if result == wrappedText {
+            // First attempt returned wrapped text verbatim (failure), retry once
             logger.info("Local LLM first attempt returned raw text, retrying once...")
-            return await manager.process(rawText: rawText)
+            result = await manager.process(rawText: wrappedText)
         }
+
+        // Guard: if the model generated commentary instead of cleaning, return raw text
+        if result == wrappedText || looksLikeCommentary(result, rawText: rawText) {
+            logger.warning("Local LLM returned commentary or failed, returning raw text")
+            return rawText
+        }
+
         return result
     }
 

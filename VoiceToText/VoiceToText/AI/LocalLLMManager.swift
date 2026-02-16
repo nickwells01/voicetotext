@@ -95,12 +95,23 @@ final class LocalLLMManager: ObservableObject {
             return rawText
         }
 
-        // Cap generation at ~2x input token estimate (1 token ≈ 4 chars) + headroom
+        // Cleanup output should be ~same length as input; +50 tokens for punctuation headroom
         let estimatedInputTokens = max(rawText.count / 4, 20)
-        session.generateParameters.maxTokens = estimatedInputTokens * 2
+        session.generateParameters.maxTokens = estimatedInputTokens + 50
 
         do {
-            let result = try await session.respond(to: rawText)
+            let result = try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask {
+                    try await session.respond(to: rawText)
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 15_000_000_000) // 15s timeout
+                    throw CancellationError()
+                }
+                let first = try await group.next()!
+                group.cancelAll()
+                return first
+            }
             let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 logger.warning("Local LLM returned empty response, returning raw text")
@@ -109,7 +120,7 @@ final class LocalLLMManager: ObservableObject {
             logger.info("Local LLM processed text (\(rawText.count) -> \(trimmed.count) chars)")
             return trimmed
         } catch {
-            logger.error("Local LLM inference failed: \(error.localizedDescription). Returning raw text.")
+            logger.warning("Local LLM timed out or failed: \(error.localizedDescription)")
             return rawText
         }
     }

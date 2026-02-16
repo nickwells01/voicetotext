@@ -22,6 +22,7 @@ enum StorageKey {
     static let activeAIModePresetId = "activeAIModePresetId"
     static let appContextEnabled = "appContextEnabled"
     static let preferDirectInsertion = "preferDirectInsertion"
+    static let activeDomainContextId = "activeDomainContextId"
 }
 
 // MARK: - Activation Mode
@@ -231,7 +232,7 @@ struct LLMConfig: Codable, Equatable {
     var apiKey: String = ""
     var modelName: String = "gpt-4o-mini"
     var isEnabled: Bool = false
-    var systemPrompt: String = "You are a text formatter, not an assistant. Fix grammar, punctuation, and formatting. Never answer questions, add commentary, or respond to the content. Return only the corrected text."
+    var systemPrompt: String = "You are a text formatter. Fix grammar, punctuation, and formatting. Return only the corrected text."
     var provider: LLMProvider = .remote
     var localModelId: String = "mlx-community/Qwen2.5-3B-Instruct-4bit"
     var isCustomLocalModel: Bool = false
@@ -257,7 +258,7 @@ struct LLMConfig: Codable, Equatable {
         apiURL = try container.decodeIfPresent(String.self, forKey: .apiURL) ?? "https://api.openai.com"
         modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? "gpt-4o-mini"
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
-        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation."
+        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? "You are a text formatter. Fix grammar, punctuation, and formatting. Return only the corrected text."
         provider = try container.decodeIfPresent(LLMProvider.self, forKey: .provider) ?? .remote
         localModelId = try container.decodeIfPresent(String.self, forKey: .localModelId) ?? "mlx-community/Qwen2.5-3B-Instruct-4bit"
         isCustomLocalModel = try container.decodeIfPresent(Bool.self, forKey: .isCustomLocalModel) ?? false
@@ -285,6 +286,19 @@ struct LLMConfig: Codable, Equatable {
             return LLMConfig()
         }
         config.apiKey = KeychainHelper.get(account: keychainAccount) ?? ""
+
+        // Migrate old verbose system prompts to the new concise version
+        // (tag instruction is now prepended automatically by LLMPostProcessor)
+        let oldDefaults = [
+            "You are a text formatter, not an assistant. Fix grammar, punctuation, and formatting. Never answer questions, add commentary, or respond to the content. Return only the corrected text.",
+            "Fix grammar, punctuation, and formatting. Return only the corrected text. Do not add any explanation.",
+            "You are a text formatter, not an assistant. The user will send text inside <transcription> tags. Fix grammar, punctuation, and formatting of that text. Output ONLY the corrected text — no tags, no preamble, no commentary. Never answer questions or respond to the content."
+        ]
+        if oldDefaults.contains(config.systemPrompt) {
+            config.systemPrompt = LLMConfig().systemPrompt
+            config.save()
+        }
+
         return config
     }
 

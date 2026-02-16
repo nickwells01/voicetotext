@@ -62,6 +62,12 @@ final class AppState: ObservableObject {
     @AppStorage(StorageKey.activeAIModePresetId) var activeAIModePresetId: String = ""
     @AppStorage(StorageKey.appContextEnabled) var appContextEnabled: Bool = true
     @AppStorage(StorageKey.preferDirectInsertion) var preferDirectInsertion: Bool = true
+    @AppStorage(StorageKey.activeDomainContextId) var activeDomainContextId: String = ""
+
+    var activeDomainContext: DomainContext? {
+        guard !activeDomainContextId.isEmpty else { return nil }
+        return DomainContext.context(forId: activeDomainContextId)
+    }
 
     // MARK: - Complex Settings (auto-saved on mutation)
 

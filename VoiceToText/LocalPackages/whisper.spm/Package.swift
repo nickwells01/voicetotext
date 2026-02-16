@@ -30,7 +30,9 @@ let metalTargets: [Target] = [
 ]
 let metalDependencies: [Target.Dependency] = [.target(name: "ggml-metal")]
 
-let whisperExclude: [String] = []
+let whisperExclude: [String] = [
+    "Sources/whisper/ggml-metal.metal"  // compiled via ggml-metal target; exclude to avoid duplicate resource
+]
 let whisperAdditionalSettings: [CSetting] = [
     .define("GGML_USE_METAL")
 ]
@@ -66,7 +68,7 @@ let package = Package(
                 "Sources/whisper/whisper.cpp",
             ],
             resources: [
-                .copy("Sources/whisper/ggml-metal.metal")
+                .copy("Sources/ggml-metal/ggml-metal.metal")
             ],
             publicHeadersPath: "Sources/whisper/include",
             cSettings: [

@@ -32,6 +32,7 @@ final class PasteCoordinator {
         customVocabulary: CustomVocabulary? = nil,
         appContext: AppCategory? = nil,
         activePreset: AIModePreset? = nil,
+        domainContext: DomainContext? = nil,
         preferDirectInsertion: Bool = true
     ) async -> String {
         // Cancel any previous pending paste
@@ -47,12 +48,12 @@ final class PasteCoordinator {
         if var llmConfig, llmConfig.isEnabled && llmConfig.isValid {
             appState.transitionTo(.processing)
 
-            // Apply active preset's system prompt if available
+            // 1. Preset prompt (replaces base)
             if let preset = activePreset {
                 llmConfig.systemPrompt = preset.systemPrompt
             }
 
-            // Append context-aware modifier
+            // 2. App context modifier
             if let context = appContext, context != .general {
                 let modifier = AppContextDetector.promptModifier(for: context)
                 if !modifier.isEmpty {
@@ -60,9 +61,20 @@ final class PasteCoordinator {
                 }
             }
 
-            // Append custom vocabulary
-            if let vocab = customVocabulary, !vocab.words.isEmpty {
-                llmConfig.systemPrompt += vocab.promptSuffix
+            // 3. Domain context modifier
+            if let domain = domainContext, !domain.promptModifier.isEmpty {
+                llmConfig.systemPrompt += "\n\n" + domain.promptModifier
+            }
+
+            // 4. Merged vocabulary (domain promptVocabulary for remote only + custom always)
+            var allWords: [String] = []
+            if let domain = domainContext, llmConfig.provider == .remote {
+                allWords.append(contentsOf: domain.promptVocabulary)
+            }
+            if let vocab = customVocabulary { allWords.append(contentsOf: vocab.words) }
+            if !allWords.isEmpty {
+                let list = allWords.joined(separator: ", ")
+                llmConfig.systemPrompt += "\n\nIMPORTANT: Preserve the following proper nouns and technical terms exactly as spelled: \(list)"
             }
 
             let postProcessor = LLMPostProcessor(config: llmConfig)

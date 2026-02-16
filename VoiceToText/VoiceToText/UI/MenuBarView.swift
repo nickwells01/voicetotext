@@ -224,6 +224,20 @@ struct MenuBarView: View {
                     .controlSize(.small)
                 }
 
+                // Domain context picker
+                configControl(icon: "book.closed", label: "Domain") {
+                    Picker("", selection: $appState.activeDomainContextId) {
+                        Text("None").tag("")
+                        Divider()
+                        ForEach(DomainContext.builtInContexts) { context in
+                            Label(context.name, systemImage: context.icon).tag(context.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+
                 // LLM model picker
                 if appState.llmConfig.provider == .local {
                     configControl(icon: "brain", label: "LLM Model") {
