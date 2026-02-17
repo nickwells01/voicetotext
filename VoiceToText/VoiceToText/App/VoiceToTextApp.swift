@@ -21,7 +21,7 @@ struct VoiceToTextApp: App {
                         openWindow(id: "onboarding")
                     }
                     #if DEBUG
-                    if CommandLine.arguments.contains("--test-harness") || CommandLine.arguments.contains("--test-batch") {
+                    if CommandLine.arguments.contains("--test-harness") || CommandLine.arguments.contains("--test-batch") || CommandLine.arguments.contains("--test-medical") || CommandLine.arguments.contains("--test-medical-ab") {
                         Task {
                             func log(_ msg: String) {
                                 FileHandle.standardError.write(Data("[TestHarness] \(msg)\n".utf8))
@@ -37,7 +37,13 @@ struct VoiceToTextApp: App {
                                 NSApp.terminate(nil)
                                 return
                             }
-                            if CommandLine.arguments.contains("--test-batch") {
+                            if CommandLine.arguments.contains("--test-medical-ab") {
+                                log("Model ready, launching medical A/B test")
+                                await pipeline.runMedicalABTest()
+                            } else if CommandLine.arguments.contains("--test-medical") {
+                                log("Model ready, launching medical batch test")
+                                await pipeline.runTestBatch(categoryFilter: "medical")
+                            } else if CommandLine.arguments.contains("--test-batch") {
                                 log("Model ready, launching batch test")
                                 await pipeline.runTestBatch()
                             } else {

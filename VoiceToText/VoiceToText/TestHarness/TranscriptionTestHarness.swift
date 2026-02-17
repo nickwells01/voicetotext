@@ -11,6 +11,8 @@ struct TestHarnessConfig {
     var simulateRealTime: Bool = false
     var pipelineConfig: PipelineConfig = PipelineConfig()
     var skipWarmup: Bool = false
+    var medCorrector: MedCorrector? = nil
+    var promptHintLine: String? = nil
 }
 
 // MARK: - Tick Metrics
@@ -183,6 +185,7 @@ final class TranscriptionTestHarness {
             sampleRate: sampleRate
         )
         let stabilizer = TranscriptStabilizer()
+        stabilizer.medCorrector = config.medCorrector
         let silenceDetector = SilenceDetector(
             silenceDurationMs: config.pipelineConfig.silenceMs
         )
@@ -271,10 +274,18 @@ final class TranscriptionTestHarness {
             let accEndMs = (fullAudioSamples.count * 1000) / sampleRate
 
             // Build prompt from committed text
-            let prompt = buildPrompt(
+            var prompt = buildPrompt(
                 from: stabilizer.state.rawCommitted,
-                maxChars: config.pipelineConfig.maxPromptChars
+                maxChars: config.pipelineConfig.maxPromptChars - (config.promptHintLine?.count ?? 0)
             )
+            // Append medical vocabulary hint line if active
+            if let hintLine = config.promptHintLine {
+                if let existing = prompt {
+                    prompt = existing + "\n" + hintLine
+                } else {
+                    prompt = hintLine
+                }
+            }
 
             // Decode
             let decodeStart = CFAbsoluteTimeGetCurrent()
@@ -639,19 +650,71 @@ final class TranscriptionTestHarness {
                    text: "Good morning everyone, and welcome to the quarterly review. Last quarter we saw revenue increase by 12% compared to the same period last year. Our customer satisfaction scores remained high at 92%. However, we did see a slight uptick in support tickets, which the team is actively working to address. Looking ahead, we plan to launch two new product features by the end of next month.",
                    expectedDurationRange: 15...35),
 
-        // Medical terminology
+        // Medical terminology — comprehensive coverage
+        // Cardiology
         TestPhrase(id: "med-cardio", category: "medical",
                    text: "The patient presents with tachycardia, hypertension, and bilateral lower extremity edema consistent with congestive heart failure.",
                    expectedDurationRange: 5...15),
+        // Medication list
         TestPhrase(id: "med-meds", category: "medical",
                    text: "Current medications include metformin 500 milligrams twice daily, lisinopril 10 milligrams daily, and atorvastatin 40 milligrams at bedtime.",
                    expectedDurationRange: 5...15),
+        // Diagnostic procedures
         TestPhrase(id: "med-procedure", category: "medical",
                    text: "Electrocardiogram showed atrial fibrillation with rapid ventricular response. Echocardiogram revealed reduced ejection fraction.",
                    expectedDurationRange: 5...15),
+        // Differential diagnosis
         TestPhrase(id: "med-differential", category: "medical",
                    text: "Differential diagnosis includes cholecystitis, pancreatitis, and gastroesophageal reflux disease. CT scan of the abdomen was ordered.",
                    expectedDurationRange: 5...15),
+        // Vital signs with numbers
+        TestPhrase(id: "med-vitals", category: "medical",
+                   text: "Vital signs show blood pressure 148 over 92, heart rate 96 beats per minute, respiratory rate 18, oxygen saturation 94% on room air, and temperature 37.2 degrees Celsius.",
+                   expectedDurationRange: 5...15),
+        // Radiology report
+        TestPhrase(id: "med-radiology", category: "medical",
+                   text: "Chest radiograph demonstrates bilateral pulmonary infiltrates with consolidation in the right lower lobe. No pneumothorax or pleural effusion identified.",
+                   expectedDurationRange: 5...15),
+        // Surgical note
+        TestPhrase(id: "med-surgical", category: "medical",
+                   text: "Laparoscopic cholecystectomy performed without complications. Gallbladder was dissected from the hepatic bed using electrocautery. Cystic duct and cystic artery were clipped and divided.",
+                   expectedDurationRange: 5...15),
+        // Lab values
+        TestPhrase(id: "med-labs", category: "medical",
+                   text: "Laboratory results show hemoglobin 11.2, white blood cell count 14,500, creatinine 1.8, potassium 5.1, and troponin elevated at 0.45.",
+                   expectedDurationRange: 5...15),
+        // Neurology
+        TestPhrase(id: "med-neuro", category: "medical",
+                   text: "Neurological examination reveals dysarthria, left-sided hemiparesis, and neglect. MRI of the brain shows acute ischemic infarction in the right middle cerebral artery territory.",
+                   expectedDurationRange: 5...15),
+        // Orthopedic assessment
+        TestPhrase(id: "med-ortho", category: "medical",
+                   text: "Physical examination of the right knee demonstrates effusion, limited range of motion, and positive McMurray test. X-ray shows osteoarthritis with joint space narrowing.",
+                   expectedDurationRange: 5...15),
+        // Pulmonology
+        TestPhrase(id: "med-pulm", category: "medical",
+                   text: "Pulmonary function tests reveal obstructive pattern with reduced forced expiratory volume. Bronchoscopy with bronchoalveolar lavage was performed for further evaluation.",
+                   expectedDurationRange: 5...15),
+        // Complex medication reconciliation
+        TestPhrase(id: "med-polypharm", category: "medical",
+                   text: "Medication reconciliation: amlodipine 5 milligrams daily, omeprazole 20 milligrams before breakfast, gabapentin 300 milligrams three times daily, warfarin 5 milligrams at bedtime, and levothyroxine 75 micrograms each morning.",
+                   expectedDurationRange: 8...20),
+        // Emergency medicine
+        TestPhrase(id: "med-emergency", category: "medical",
+                   text: "Patient arrived via ambulance with suspected anaphylaxis. Epinephrine 0.3 milligrams was administered intramuscularly. Intravenous access was established and normal saline bolus initiated.",
+                   expectedDurationRange: 5...15),
+        // Dermatology
+        TestPhrase(id: "med-derm", category: "medical",
+                   text: "Dermatologic examination reveals erythematous papules and vesicles distributed along the thoracic dermatome consistent with herpes zoster. Prescribed valacyclovir 1000 milligrams three times daily.",
+                   expectedDurationRange: 5...15),
+        // Obstetrics
+        TestPhrase(id: "med-obstetrics", category: "medical",
+                   text: "Obstetric ultrasound at 20 weeks gestation shows normal fetal anatomy. Estimated fetal weight is appropriate for gestational age. Placenta is posterior and fundal. Amniotic fluid index is within normal limits.",
+                   expectedDurationRange: 5...15),
+        // Extended medical dictation (~120 words)
+        TestPhrase(id: "med-hpi-long", category: "medical",
+                   text: "History of present illness. This is a 67-year-old male with past medical history of hypertension, type 2 diabetes mellitus, and hyperlipidemia who presents to the emergency department with acute onset substernal chest pain radiating to the left arm. Pain began approximately 2 hours ago while patient was at rest. Associated symptoms include diaphoresis and shortness of breath. Patient denies nausea, vomiting, or syncope. He reports compliance with his medications including aspirin, metoprolol, and rosuvastatin. Electrocardiogram shows ST elevation in leads V2 through V4. Troponin is pending. Cardiology was consulted for emergent cardiac catheterization.",
+                   expectedDurationRange: 20...40),
 
         // 60-second extended dictation (~170 words). Deliberately includes natural
         // repeated phrases ("I think we", "we need to", "going to be") that
@@ -663,8 +726,22 @@ final class TranscriptionTestHarness {
 
     // MARK: - Batch Runner
 
-    func runBatch(whisperManager: WhisperManager, pipelineConfig: PipelineConfig) async throws -> BatchReport {
-        log("=== Batch Test Starting (\(Self.phraseLibrary.count) phrases) ===")
+    func runBatch(whisperManager: WhisperManager, pipelineConfig: PipelineConfig, categoryFilter: String? = nil, enableMedical: Bool = false) async throws -> BatchReport {
+        let phrases = categoryFilter != nil
+            ? Self.phraseLibrary.filter { $0.category == categoryFilter }
+            : Self.phraseLibrary
+        let medLabel = enableMedical ? ", medical mode ON" : ""
+        log("=== Batch Test Starting (\(phrases.count) phrases\(categoryFilter.map { ", category: \($0)" } ?? "")\(medLabel)) ===")
+
+        // Load medical components if enabled
+        var medCorrector: MedCorrector? = nil
+        var promptHintLine: String? = nil
+        if enableMedical, let index = MedicalTermIndex.load() {
+            medCorrector = MedCorrector(index: index)
+            let hintTerms = Array(index.promptHintTerms.prefix(30))
+            promptHintLine = "Vocabulary: " + hintTerms.joined(separator: ", ")
+            log("Medical mode: \(index.termSet.count) terms indexed, \(hintTerms.count) prompt hints")
+        }
 
         // Warmup Metal graph once for the entire batch
         let maxBufferSamples = pipelineConfig.sampleRate * pipelineConfig.maxBufferMs / 1000
@@ -679,17 +756,25 @@ final class TranscriptionTestHarness {
 
         var results: [PhraseResult] = []
 
-        for (i, phrase) in Self.phraseLibrary.enumerated() {
+        for (i, phrase) in phrases.enumerated() {
             log("")
-            log("=== Phrase \(i + 1)/\(Self.phraseLibrary.count): \(phrase.id) [\(phrase.category)] ===")
+            log("=== Phrase \(i + 1)/\(phrases.count): \(phrase.id) [\(phrase.category)] ===")
 
             var config = TestHarnessConfig(
                 phrase: phrase.text,
                 pipelineConfig: pipelineConfig
             )
             config.skipWarmup = true
+            config.medCorrector = medCorrector
+            config.promptHintLine = promptHintLine
 
-            let report = try await run(config: config, whisperManager: whisperManager)
+            let report: TestHarnessReport
+            do {
+                report = try await run(config: config, whisperManager: whisperManager)
+            } catch {
+                log("  -> [ERROR] \(error.localizedDescription) — skipping phrase")
+                continue
+            }
 
             let streamingWER = wordErrorRate(reference: phrase.text, hypothesis: report.streamingResult)
             let fullDecodeWER = wordErrorRate(reference: phrase.text, hypothesis: report.fullDecodeResult)
